@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRM WhatsApp</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <h1>CRM WhatsApp</h1>
+      </div>
+      <div class="topbar-actions">
+        <select id="vendor-select" aria-label="Vendor"></select>
+        <button id="settings-btn" class="btn btn-ghost" type="button">⚙ Configuración</button>
+      </div>
+    </header>
+
+    <section class="kpis" id="kpis">
+      <div class="kpi" data-label="TODOS"><span class="kpi-value" id="kpi-total">0</span><span class="kpi-label">Prospectos</span></div>
+      <div class="kpi kpi-ok" data-label="CALIFICADO"><span class="kpi-value" id="kpi-calificado">0</span><span class="kpi-label">Calificados</span></div>
+      <div class="kpi kpi-warn" data-label="TIBIO"><span class="kpi-value" id="kpi-tibio">0</span><span class="kpi-label">Tibios</span></div>
+      <div class="kpi kpi-cold" data-label="FRIO"><span class="kpi-value" id="kpi-frio">0</span><span class="kpi-label">Fríos</span></div>
+      <div class="kpi kpi-off" data-label="DESCARTADO"><span class="kpi-value" id="kpi-descartado">0</span><span class="kpi-label">Descartados</span></div>
+    </section>
+
+    <div class="filters" id="filters">
+      <button class="chip is-active" data-filter="TODOS">Todos</button>
+      <button class="chip" data-filter="CALIFICADO">Calificado</button>
+      <button class="chip" data-filter="TIBIO">Tibio</button>
+      <button class="chip" data-filter="FRIO">Frío</button>
+      <button class="chip" data-filter="DESCARTADO">Descartado</button>
+      <input id="search" type="search" placeholder="Buscar nombre o teléfono…" />
+    </div>
+
+    <main>
+      <div class="table-wrap">
+        <table id="prospects-table">
+          <thead>
+            <tr>
+              <th data-sort="nombre">Nombre</th>
+              <th data-sort="phone">Teléfono</th>
+              <th data-sort="score">Score</th>
+              <th data-sort="label">Estado</th>
+              <th data-sort="prioridad">Prioridad</th>
+              <th data-sort="zona">Zona</th>
+              <th data-sort="presupuesto">Presupuesto</th>
+              <th data-sort="conversation_step">Paso</th>
+              <th data-sort="updated_at">Actualizado</th>
+            </tr>
+          </thead>
+          <tbody id="prospects-tbody">
+            <tr class="empty-row"><td colspan="9">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <!-- Drawer: detalle de prospecto + conversación -->
+  <div id="drawer-overlay" class="overlay" hidden>
+    <aside id="drawer" class="drawer">
+      <div class="drawer-header">
+        <h2 id="drawer-name">—</h2>
+        <button class="btn-icon" id="drawer-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="drawer-body">
+        <div class="prospect-facts" id="prospect-facts"></div>
+        <h3 class="section-title">Conversación</h3>
+        <div id="messages-thread" class="thread"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Modal: configuración del vendor -->
+  <div id="settings-overlay" class="overlay" hidden>
+    <div class="modal">
+      <div class="drawer-header">
+        <h2>Configuración del bot</h2>
+        <button class="btn-icon" id="settings-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="settings-form" class="settings-form">
+        <label>
+          Proveedor de IA
+          <select id="f-provider" name="ai_provider">
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openai">OpenAI (GPT)</option>
+            <option value="google">Google (Gemini)</option>
+          </select>
+        </label>
+        <label>
+          Modelo
+          <input id="f-model" name="ai_model" type="text" placeholder="claude-sonnet-4-6" />
+        </label>
+        <label>
+          API key <span class="hint">(se deja en blanco = no cambiar)</span>
+          <input id="f-key" name="ai_api_key" type="password" placeholder="sk-…" autocomplete="off" />
+        </label>
+        <label>
+          Prompt del sistema
+          <textarea id="f-prompt" name="system_prompt" rows="12" placeholder="Instrucciones del asistente…"></textarea>
+        </label>
+        <div class="settings-actions">
+          <span id="settings-status" class="settings-status"></span>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
