@@ -48,6 +48,10 @@
             <button id="create-agent-btn" class="btn btn-ghost" type="button">＋ Crear vendedor</button>
             <button id="create-vendor-btn" class="btn btn-primary" type="button">＋ Agregar canal</button>
           </div>
+          <div class="topbar-actions-group" data-section-group="productos" hidden>
+            <button id="products-autofill-btn" class="btn btn-ghost" type="button">✨ Autocompletar</button>
+            <button id="products-new-btn" class="btn btn-primary" type="button">＋ Nuevo producto</button>
+          </div>
         </div>
       </header>
 
@@ -80,6 +84,18 @@
       <section id="view-canales" class="view">
         <div class="cards-grid" id="vendor-cards">
           <p class="muted">Cargando canales…</p>
+        </div>
+      </section>
+
+      <!-- ═══ Vista: Productos (catálogo) ═══════════════════════════════ -->
+      <section id="view-productos" class="view" hidden>
+        <div class="inbox-search-wrap products-search-wrap">
+          <span class="inbox-search-icon">🔍</span>
+          <input id="products-search" type="search" placeholder="Buscar productos…" />
+        </div>
+
+        <div id="products-list" class="products-grid">
+          <p class="muted">Cargando productos…</p>
         </div>
       </section>
 
@@ -714,6 +730,75 @@
           <span id="customfield-status" class="settings-status"></span>
           <button type="button" class="btn btn-ghost" id="customfield-cancel-btn">Cancelar</button>
           <button type="submit" class="btn btn-primary">＋ Crear campo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: crear producto -->
+  <div id="product-overlay" class="overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="drawer-header">
+        <h2>Nuevo producto</h2>
+        <button class="btn-icon" id="product-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="product-form" class="settings-form">
+        <p class="muted" style="margin:-8px 0 0;">Agrega un nuevo producto a tu catálogo.</p>
+        <label>
+          Nombre
+          <input name="name" type="text" placeholder="Ej. Plan Premium" required />
+        </label>
+        <div class="product-form-row">
+          <label>
+            Precio
+            <input name="price" type="number" min="0" step="0.01" placeholder="0" />
+          </label>
+          <label>
+            Moneda
+            <select name="currency">
+              <option value="PEN">PEN</option>
+              <option value="USD">USD</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          Cantidad <span class="hint">(opcional — déjalo vacío si no controlas stock)</span>
+          <input name="quantity" type="number" min="0" step="1" placeholder="Ej. 100" />
+        </label>
+        <label>
+          Descripción <span class="hint">(opcional)</span>
+          <textarea name="description" rows="3" placeholder="Describe el producto…"></textarea>
+        </label>
+        <div class="settings-actions">
+          <span id="product-status" class="settings-status"></span>
+          <button type="button" class="btn btn-ghost" id="product-cancel-btn">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Crear producto</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: autocompletar catálogo con IA -->
+  <div id="autofill-overlay" class="overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="drawer-header">
+        <h2>✨ Autocompletar catálogo</h2>
+        <button class="btn-icon" id="autofill-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="autofill-form" class="settings-form">
+        <p class="muted" style="margin:-8px 0 0;">Cuéntanos qué vende tu negocio y la IA genera productos de ejemplo para tu catálogo.</p>
+        <label>
+          Descripción del negocio
+          <textarea name="description" rows="3" placeholder="Ej. Tienda de zapatillas deportivas y ropa urbana" required></textarea>
+        </label>
+        <label>
+          Cantidad de productos a generar
+          <input name="count" type="number" min="1" max="12" value="6" />
+        </label>
+        <div class="settings-actions">
+          <span id="autofill-status" class="settings-status"></span>
+          <button type="button" class="btn btn-ghost" id="autofill-cancel-btn">Cancelar</button>
+          <button type="submit" class="btn btn-primary">✨ Generar catálogo</button>
         </div>
       </form>
     </div>

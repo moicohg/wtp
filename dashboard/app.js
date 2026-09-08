@@ -16,7 +16,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // ── Estado ───────────────────────────────────────────────────────────────────
 
 const PLACEHOLDER_INFO = {
-  productos: ['📦', 'Productos', 'Catálogo de productos/propiedades para vincular a las conversaciones. Todavía no está construido.'],
   'catalogo-ia': ['🧠', 'Catálogo IA', 'Biblioteca de prompts y respuestas reutilizables para los bots. Todavía no está construida.'],
   automatizacion: ['🔁', 'Automatización', 'Reglas y flujos automáticos (difusiones, recordatorios, etc). Todavía no está construida.'],
   disponibilidad: ['🗓', 'Disponibilidad', 'Calendario de horarios/citas de los asesores. Todavía no está construida.'],
@@ -77,6 +76,9 @@ Object.assign(state, {
   ciCalif: { necesidad: null, inversion: null, urgencia: null, autoridad: null }, // puntos de la rúbrica de calificación (edición en curso)
   customFields: [], // definición global de campos personalizados (compartida en todos los canales/chats)
   ciCustomValues: {}, // valores del prospecto abierto: { [custom_field_id]: value } (edición en curso)
+
+  products: [],
+  productsSearch: '',
 
   // Composer: grabación de nota de voz
   mediaRecorder: null,
@@ -180,6 +182,20 @@ const placeholderTitle = document.getElementById('placeholder-title');
 const placeholderText = document.getElementById('placeholder-text');
 
 const vendorCardsEl = document.getElementById('vendor-cards');
+
+const viewProductos = document.getElementById('view-productos');
+const productsSearchInput = document.getElementById('products-search');
+const productsListEl = document.getElementById('products-list');
+const productsNewBtn = document.getElementById('products-new-btn');
+const productsAutofillBtn = document.getElementById('products-autofill-btn');
+
+const productOverlay = document.getElementById('product-overlay');
+const productForm = document.getElementById('product-form');
+const productStatus = document.getElementById('product-status');
+
+const autofillOverlay = document.getElementById('autofill-overlay');
+const autofillForm = document.getElementById('autofill-form');
+const autofillStatus = document.getElementById('autofill-status');
 
 const inboxSearchInput = document.getElementById('inbox-search');
 const inboxCanalesTrigger = document.querySelector('.filter-trigger[data-filter="canales"]');
@@ -326,16 +342,19 @@ async function setSection(section) {
   const isInbox = section === 'bandeja-global';
   const isChannel = section.startsWith('vendor:');
   const isDashboard = section === 'dashboard';
-  const isPlaceholder = !isCanales && !isLeads && !isInbox && !isChannel && !isDashboard;
+  const isProductos = section === 'productos';
+  const isPlaceholder = !isCanales && !isLeads && !isInbox && !isChannel && !isDashboard && !isProductos;
 
   viewDashboard.hidden = !isDashboard;
   viewCanales.hidden = !isCanales;
   viewLeads.hidden = !isLeads;
   viewInbox.hidden = !isInbox;
   viewChannel.hidden = !isChannel;
+  viewProductos.hidden = !isProductos;
   viewPlaceholder.hidden = !isPlaceholder;
   document.querySelector('[data-section-group="canales"]').hidden = !isCanales;
   document.querySelector('[data-section-group="leads"]').hidden = !isLeads;
+  document.querySelector('[data-section-group="productos"]').hidden = !isProductos;
 
   if (isDashboard) {
     topbarTitle.textContent = 'Dashboard';
@@ -344,6 +363,9 @@ async function setSection(section) {
     topbarTitle.textContent = 'Canales';
   } else if (isLeads) {
     topbarTitle.textContent = 'Leads';
+  } else if (isProductos) {
+    topbarTitle.textContent = 'Productos';
+    await loadProducts();
   } else if (section === 'bandeja-global') {
     topbarTitle.textContent = 'Bandeja Global';
     state.inboxVendorLock = null;
@@ -418,6 +440,187 @@ async function loadCustomFields() {
   state.customFields = data ?? [];
   renderCustomFields();
 }
+
+// Catálogo de productos: global, se gestiona desde la sección "Productos".
+async function loadProducts() {
+  productsListEl.innerHTML = '<p class="muted">Cargando productos…</p>';
+  const { data, error } = await supabase.from('products').select('*').order('created_at', { ascending: false });
+  if (error) {
+    console.error('Error cargando productos:', error.message);
+    productsListEl.innerHTML = `<p class="muted">Error al cargar productos: ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  state.products = data ?? [];
+  renderProductsList();
+}
+
+function renderProductsList() {
+  const q = state.productsSearch.trim().toLowerCase();
+  const rows = q
+    ? state.products.filter((p) => p.name.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q))
+    : state.products;
+
+  if (!rows.length) {
+    productsListEl.innerHTML = state.products.length
+      ? `<div class="products-empty">
+           <div class="products-empty-icon">📦</div>
+           <h3>Sin resultados</h3>
+           <p class="muted">No hay productos que coincidan con tu búsqueda.</p>
+         </div>`
+      : `<div class="products-empty">
+           <div class="products-empty-icon">📦</div>
+           <h3>Sin productos aún</h3>
+           <p class="muted">Crea el primer producto para tu catálogo</p>
+           <button type="button" class="btn btn-primary" id="products-empty-create-btn">＋ Crear producto</button>
+         </div>`;
+    if (!state.products.length) {
+      document.getElementById('products-empty-create-btn')?.addEventListener('click', openProductModal);
+    }
+    return;
+  }
+
+  productsListEl.innerHTML = rows
+    .map((p) => {
+      const qty = p.quantity === null || p.quantity === undefined ? '' : `<span class="product-card-qty">Stock: ${p.quantity}</span>`;
+      const desc = p.description ? `<p class="product-card-desc">${escapeHtml(p.description)}</p>` : '';
+      return `
+        <div class="product-card" data-id="${p.id}">
+          <div class="product-card-top">
+            <span class="product-card-name">${escapeHtml(p.name)}</span>
+            <button type="button" class="btn-icon product-card-delete" data-delete-product="${p.id}" title="Eliminar" aria-label="Eliminar">🗑</button>
+          </div>
+          <span class="product-card-price">${fmtMoney(p.price, p.currency)}</span>
+          ${qty}
+          ${desc}
+        </div>`;
+    })
+    .join('');
+}
+
+productsSearchInput?.addEventListener('input', () => {
+  state.productsSearch = productsSearchInput.value;
+  renderProductsList();
+});
+
+productsListEl?.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('[data-delete-product]');
+  if (!btn) return;
+  const id = btn.dataset.deleteProduct;
+  if (!confirm('¿Eliminar este producto del catálogo?')) return;
+  const { error } = await supabase.from('products').delete().eq('id', id);
+  if (error) {
+    alert(`Error al eliminar: ${error.message}`);
+    return;
+  }
+  state.products = state.products.filter((p) => p.id !== id);
+  renderProductsList();
+});
+
+function openProductModal() {
+  productForm.reset();
+  productStatus.textContent = '';
+  productStatus.className = 'settings-status';
+  productOverlay.hidden = false;
+}
+function closeProductModal() {
+  productOverlay.hidden = true;
+}
+productsNewBtn?.addEventListener('click', openProductModal);
+document.getElementById('product-modal-close')?.addEventListener('click', closeProductModal);
+document.getElementById('product-cancel-btn')?.addEventListener('click', closeProductModal);
+productOverlay?.addEventListener('click', (ev) => {
+  if (ev.target === productOverlay) closeProductModal();
+});
+
+async function createProduct(ev) {
+  ev.preventDefault();
+  const fd = new FormData(productForm);
+  const name = String(fd.get('name') || '').trim();
+  if (!name) {
+    productStatus.textContent = 'El nombre del producto es obligatorio.';
+    productStatus.className = 'settings-status err';
+    return;
+  }
+  const priceRaw = fd.get('price');
+  const quantityRaw = fd.get('quantity');
+
+  productStatus.textContent = 'Creando…';
+  productStatus.className = 'settings-status';
+
+  const { error } = await supabase.from('products').insert({
+    name,
+    price: priceRaw === '' || priceRaw === null ? 0 : Number(priceRaw),
+    currency: fd.get('currency') || 'PEN',
+    quantity: quantityRaw === '' || quantityRaw === null ? null : Number(quantityRaw),
+    description: String(fd.get('description') || '').trim() || null,
+  });
+
+  if (error) {
+    productStatus.textContent = `Error: ${error.message}`;
+    productStatus.className = 'settings-status err';
+    return;
+  }
+
+  productStatus.textContent = 'Producto creado ✓';
+  productStatus.className = 'settings-status ok';
+  productForm.reset();
+  await loadProducts();
+  setTimeout(closeProductModal, 500);
+}
+productForm?.addEventListener('submit', createProduct);
+
+function openAutofillModal() {
+  autofillForm.reset();
+  autofillStatus.textContent = '';
+  autofillStatus.className = 'settings-status';
+  autofillOverlay.hidden = false;
+}
+function closeAutofillModal() {
+  autofillOverlay.hidden = true;
+}
+productsAutofillBtn?.addEventListener('click', openAutofillModal);
+document.getElementById('autofill-modal-close')?.addEventListener('click', closeAutofillModal);
+document.getElementById('autofill-cancel-btn')?.addEventListener('click', closeAutofillModal);
+autofillOverlay?.addEventListener('click', (ev) => {
+  if (ev.target === autofillOverlay) closeAutofillModal();
+});
+
+async function generateProductCatalog(ev) {
+  ev.preventDefault();
+  const fd = new FormData(autofillForm);
+  const description = String(fd.get('description') || '').trim();
+  if (!description) {
+    autofillStatus.textContent = 'Cuéntanos qué vende tu negocio.';
+    autofillStatus.className = 'settings-status err';
+    return;
+  }
+  const count = Number(fd.get('count')) || 6;
+
+  autofillStatus.textContent = 'Generando catálogo con IA…';
+  autofillStatus.className = 'settings-status';
+
+  try {
+    const resp = await fetch(`${FUNCTIONS_URL}/product-autocomplete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}`, apikey: SUPABASE_ANON_KEY },
+      body: JSON.stringify({ description, count }),
+    });
+    const json = await resp.json();
+    if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
+
+    const { error } = await supabase.from('products').insert(json.products);
+    if (error) throw new Error(error.message);
+
+    autofillStatus.textContent = `${json.products.length} productos generados ✓`;
+    autofillStatus.className = 'settings-status ok';
+    await loadProducts();
+    setTimeout(closeAutofillModal, 700);
+  } catch (err) {
+    autofillStatus.textContent = `Error: ${err.message}`;
+    autofillStatus.className = 'settings-status err';
+  }
+}
+autofillForm?.addEventListener('submit', generateProductCatalog);
 
 async function loadProspects() {
   if (!state.vendorId) return;
@@ -2684,6 +2887,8 @@ document.addEventListener('keydown', (ev) => {
   if (!agentOverlay.hidden) agentOverlay.hidden = true;
   if (!assignOverlay.hidden) assignOverlay.hidden = true;
   if (!customfieldOverlay.hidden) customfieldOverlay.hidden = true;
+  if (!productOverlay.hidden) closeProductModal();
+  if (!autofillOverlay.hidden) closeAutofillModal();
 });
 
 // ── Init ─────────────────────────────────────────────────────────────────────
