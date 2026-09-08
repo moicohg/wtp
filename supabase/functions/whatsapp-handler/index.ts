@@ -32,6 +32,7 @@ interface Prospect {
   conversation_step: string;
   retries_current_step: number;
   evasive_count: number;
+  ia_enabled: boolean;
 }
 
 interface Message {
@@ -325,8 +326,8 @@ Deno.serve(async (req: Request) => {
       { prospect_id: prospect.id, role: 'user', content: messageText },
     ]);
 
-    if (!vendor.ai_api_key) {
-      console.warn('[vendor] sin ai_api_key — mensaje guardado pero sin respuesta IA. vendor_id:', vendor.id);
+    if (!vendor.ai_api_key || !prospect.ia_enabled) {
+      console.warn('[vendor] sin ai_api_key o ia_enabled=false — mensaje guardado pero sin respuesta IA. vendor_id:', vendor.id);
       return new Response('ok', { status: 200 });
     }
 

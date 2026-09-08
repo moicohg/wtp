@@ -33,6 +33,7 @@ interface Prospect {
   conversation_step: string;
   retries_current_step: number;
   evasive_count: number;
+  ia_enabled: boolean;
 }
 
 interface Message {
@@ -376,8 +377,8 @@ Deno.serve(async (req: Request) => {
 
           // Si el vendor no tiene api_key configurada, solo guardamos el mensaje
           // y no intentamos llamar a la IA (evita error y pérdida del mensaje)
-          if (!vendor.ai_api_key) {
-            console.warn('[vendor] sin ai_api_key — mensaje guardado pero sin respuesta IA. vendor_id:', vendor.id);
+          if (!vendor.ai_api_key || !prospect.ia_enabled) {
+            console.warn('[vendor] sin ai_api_key o ia_enabled=false — mensaje guardado pero sin respuesta IA. vendor_id:', vendor.id);
             continue;
           }
 

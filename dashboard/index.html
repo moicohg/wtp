@@ -7,57 +7,457 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="app">
-    <header class="topbar">
+  <div class="shell">
+    <aside class="sidebar">
       <div class="brand">
         <span class="brand-dot"></span>
         <h1>CRM WhatsApp</h1>
       </div>
-      <div class="topbar-actions">
-        <select id="vendor-select" aria-label="Vendor"></select>
-        <button id="settings-btn" class="btn btn-ghost" type="button">⚙ Configuración</button>
-      </div>
-    </header>
 
-    <section class="kpis" id="kpis">
-      <div class="kpi" data-label="TODOS"><span class="kpi-value" id="kpi-total">0</span><span class="kpi-label">Prospectos</span></div>
-      <div class="kpi kpi-ok" data-label="CALIFICADO"><span class="kpi-value" id="kpi-calificado">0</span><span class="kpi-label">Calificados</span></div>
-      <div class="kpi kpi-warn" data-label="TIBIO"><span class="kpi-value" id="kpi-tibio">0</span><span class="kpi-label">Tibios</span></div>
-      <div class="kpi kpi-cold" data-label="FRIO"><span class="kpi-value" id="kpi-frio">0</span><span class="kpi-label">Fríos</span></div>
-      <div class="kpi kpi-off" data-label="DESCARTADO"><span class="kpi-value" id="kpi-descartado">0</span><span class="kpi-label">Descartados</span></div>
-    </section>
+      <div class="nav-group-label">Plataforma</div>
+      <nav class="sidenav" id="sidenav">
+        <button class="sidenav-item" data-section="dashboard" type="button">Dashboard</button>
 
-    <div class="filters" id="filters">
-      <button class="chip is-active" data-filter="TODOS">Todos</button>
-      <button class="chip" data-filter="CALIFICADO">Calificado</button>
-      <button class="chip" data-filter="TIBIO">Tibio</button>
-      <button class="chip" data-filter="FRIO">Frío</button>
-      <button class="chip" data-filter="DESCARTADO">Descartado</button>
-      <input id="search" type="search" placeholder="Buscar nombre o teléfono…" />
+        <div class="sidenav-section">
+          <button class="sidenav-item is-parent is-active" data-section="canales-lista" type="button">
+            Canales
+          </button>
+          <div class="sidenav-children">
+            <button class="sidenav-subitem is-active" data-section="canales-lista" type="button">Lista de asesores</button>
+            <button class="sidenav-subitem" data-section="bandeja-global" type="button">Bandeja Global</button>
+            <div id="sidenav-vendors"></div>
+          </div>
+        </div>
+
+        <button class="sidenav-item" data-section="productos" type="button">Productos</button>
+        <button class="sidenav-item" data-section="catalogo-ia" type="button">Catálogo IA</button>
+        <button class="sidenav-item" data-section="leads" type="button">Leads</button>
+        <button class="sidenav-item" data-section="automatizacion" type="button">Automatización</button>
+        <button class="sidenav-item" data-section="disponibilidad" type="button">Disponibilidad</button>
+      </nav>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <h2 id="topbar-title">Canales</h2>
+        <div class="topbar-actions">
+          <div class="topbar-actions-group" data-section-group="leads" hidden>
+            <select id="vendor-select" aria-label="Vendor"></select>
+          </div>
+          <div class="topbar-actions-group" data-section-group="canales">
+            <button id="create-agent-btn" class="btn btn-ghost" type="button">＋ Crear vendedor</button>
+            <button id="create-vendor-btn" class="btn btn-primary" type="button">＋ Agregar canal</button>
+          </div>
+        </div>
+      </header>
+
+      <!-- ═══ Vista: Dashboard ═══════════════════════════════════════════ -->
+      <section id="view-dashboard" class="view" hidden>
+        <div class="kpis" id="dash-kpis">
+          <div class="kpi"><span class="kpi-value" id="dash-kpi-leads">0</span><span class="kpi-label">Leads totales</span></div>
+          <div class="kpi kpi-ok"><span class="kpi-value" id="dash-kpi-ventas">0</span><span class="kpi-label">Ventas cerradas</span></div>
+          <div class="kpi kpi-warn"><span class="kpi-value" id="dash-kpi-depositar">0</span><span class="kpi-label">Por depositar</span></div>
+          <div class="kpi kpi-cold"><span class="kpi-value" id="dash-kpi-conversion">0%</span><span class="kpi-label">Tasa de conversión</span></div>
+        </div>
+
+        <div class="filters dash-tabs" id="dash-tabs">
+          <button class="chip is-active" data-dash-tab="hoy" type="button">☀️ Hoy</button>
+          <button class="chip" data-dash-tab="dueno" type="button">🧑‍💼 Dueño</button>
+          <button class="chip" data-dash-tab="embudo" type="button">🔻 Embudo</button>
+          <button class="chip" data-dash-tab="asesores" type="button">👥 Asesores</button>
+          <button class="chip" data-dash-tab="perdidos" type="button">📉 Perdidos</button>
+          <button class="chip" data-dash-tab="salud" type="button">💓 Salud</button>
+          <button class="chip" data-dash-tab="productos" type="button">📦 Productos</button>
+          <button class="chip" data-dash-tab="anuncios" type="button">📣 Anuncios</button>
+        </div>
+
+        <div class="dash-panel" id="dash-panel">
+          <p class="muted">Cargando dashboard…</p>
+        </div>
+      </section>
+
+      <!-- ═══ Vista: Canales (lista de asesores) ═══════════════════════ -->
+      <section id="view-canales" class="view">
+        <div class="cards-grid" id="vendor-cards">
+          <p class="muted">Cargando canales…</p>
+        </div>
+      </section>
+
+      <!-- ═══ Vista: Leads ══════════════════════════════════════════════ -->
+      <section id="view-leads" class="view" hidden>
+        <section class="kpis" id="kpis">
+          <div class="kpi" data-label="TODOS"><span class="kpi-value" id="kpi-total">0</span><span class="kpi-label">Prospectos</span></div>
+          <div class="kpi kpi-ok" data-label="CALIFICADO"><span class="kpi-value" id="kpi-calificado">0</span><span class="kpi-label">Calificados</span></div>
+          <div class="kpi kpi-warn" data-label="TIBIO"><span class="kpi-value" id="kpi-tibio">0</span><span class="kpi-label">Tibios</span></div>
+          <div class="kpi kpi-cold" data-label="FRIO"><span class="kpi-value" id="kpi-frio">0</span><span class="kpi-label">Fríos</span></div>
+          <div class="kpi kpi-off" data-label="DESCARTADO"><span class="kpi-value" id="kpi-descartado">0</span><span class="kpi-label">Descartados</span></div>
+        </section>
+
+        <div class="filters" id="filters">
+          <button class="chip is-active" data-filter="TODOS">Todos</button>
+          <button class="chip" data-filter="CALIFICADO">Calificado</button>
+          <button class="chip" data-filter="TIBIO">Tibio</button>
+          <button class="chip" data-filter="FRIO">Frío</button>
+          <button class="chip" data-filter="DESCARTADO">Descartado</button>
+          <input id="search" type="search" placeholder="Buscar nombre o teléfono…" />
+        </div>
+
+        <div class="table-wrap">
+          <table id="prospects-table">
+            <thead>
+              <tr>
+                <th data-sort="nombre">Nombre</th>
+                <th data-sort="phone">Teléfono</th>
+                <th data-sort="score">Score</th>
+                <th data-sort="label">Estado</th>
+                <th data-sort="prioridad">Prioridad</th>
+                <th data-sort="zona">Zona</th>
+                <th data-sort="presupuesto">Presupuesto</th>
+                <th data-sort="conversation_step">Paso</th>
+                <th data-sort="updated_at">Actualizado</th>
+              </tr>
+            </thead>
+            <tbody id="prospects-tbody">
+              <tr class="empty-row"><td colspan="9">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ═══ Vista: Bandeja Global / chats por asesor ═══════════════════ -->
+      <section id="view-inbox" class="view" hidden>
+        <div class="inbox-filters">
+          <div class="inbox-search-wrap">
+            <span class="inbox-search-icon">🔍</span>
+            <input id="inbox-search" type="search" placeholder="Buscar conversaciones…" />
+          </div>
+
+          <div class="filter-dropdown">
+            <button type="button" class="filter-trigger" data-filter="canales">Canales <span class="filter-badge" hidden>0</span> <span class="filter-caret">▾</span></button>
+            <div class="filter-panel" hidden>
+              <div class="filter-panel-title">Filtrar por canal</div>
+              <div class="filter-panel-list" id="fp-canales-list"></div>
+            </div>
+          </div>
+
+          <div class="filter-dropdown">
+            <button type="button" class="filter-trigger" data-filter="etapas">Etapas <span class="filter-badge" hidden>0</span> <span class="filter-caret">▾</span></button>
+            <div class="filter-panel" hidden>
+              <div class="filter-panel-title">Filtrar por etapa</div>
+              <div class="filter-panel-list" id="fp-etapas-list"></div>
+            </div>
+          </div>
+
+          <div class="filter-dropdown">
+            <button type="button" class="filter-trigger" data-filter="etiquetas">Etiquetas <span class="filter-badge" hidden>0</span> <span class="filter-caret">▾</span></button>
+            <div class="filter-panel" hidden>
+              <div class="filter-panel-title">Filtrar por etiqueta</div>
+              <input type="search" id="fp-etiquetas-search" class="filter-panel-search" placeholder="Buscar etiqueta…" />
+              <div class="filter-panel-list" id="fp-etiquetas-list"></div>
+            </div>
+          </div>
+
+          <div class="filter-dropdown">
+            <button type="button" class="filter-trigger" data-filter="productos">Productos <span class="filter-caret">▾</span></button>
+            <div class="filter-panel" hidden>
+              <div class="filter-panel-title">Filtrar por producto</div>
+              <p class="muted filter-panel-empty">No hay productos disponibles</p>
+            </div>
+          </div>
+
+          <div class="filter-dropdown">
+            <button type="button" class="filter-trigger" data-filter="vendedores">Vendedores <span class="filter-badge" hidden>0</span> <span class="filter-caret">▾</span></button>
+            <div class="filter-panel" hidden>
+              <div class="filter-panel-title">Filtrar por vendedor</div>
+              <div class="filter-panel-list" id="fp-vendedores-list"></div>
+            </div>
+          </div>
+
+          <div class="filter-dropdown filter-dropdown-dates">
+            <button type="button" class="filter-trigger" data-filter="fechas" id="fp-fechas-trigger">📅 Selecciona un rango de fechas</button>
+            <div class="filter-panel filter-panel-dates" hidden>
+              <div class="date-mode-tabs">
+                <button type="button" class="date-mode-btn is-active" data-date-mode="last_message_at">Últ. actividad</button>
+                <button type="button" class="date-mode-btn" data-date-mode="created_at">Creación</button>
+              </div>
+              <div class="date-calendars" id="fp-fechas-calendars"></div>
+              <div class="date-actions">
+                <button type="button" class="btn btn-ghost" id="fp-fechas-clear">Limpiar</button>
+                <button type="button" class="btn btn-primary" id="fp-fechas-apply">Aplicar</button>
+              </div>
+            </div>
+          </div>
+
+          <button id="inbox-sort-score" class="btn btn-ghost" type="button">↕ Puntaje</button>
+        </div>
+
+        <div class="inbox-tabs">
+          <button class="chip is-active" data-inbox-tab="todos" type="button">Todos <span id="inbox-count-todos">0</span></button>
+          <button class="chip" data-inbox-tab="prestados" type="button">Prestados <span id="inbox-count-prestados">0</span></button>
+        </div>
+
+        <div class="inbox-list" id="inbox-list">
+          <p class="muted">Cargando conversaciones…</p>
+        </div>
+      </section>
+
+      <!-- ═══ Vista: Chat de un canal (3 paneles) ════════════════════════ -->
+      <section id="view-channel" class="view" hidden>
+        <div class="channel-layout">
+          <aside class="channel-list-pane">
+            <div class="channel-list-tabs">
+              <button class="chip is-active" data-channel-tab="chats" type="button">Chats</button>
+              <button class="chip" data-channel-tab="archivados" type="button">Archivados</button>
+            </div>
+            <div class="inbox-search-wrap">
+              <span class="inbox-search-icon">🔍</span>
+              <input id="channel-search" type="search" placeholder="Buscar conversaciones…" />
+            </div>
+            <div class="channel-contacts" id="channel-contacts">
+              <p class="muted" style="padding:16px;">Cargando…</p>
+            </div>
+          </aside>
+
+          <section class="channel-thread-pane">
+            <div class="channel-thread-empty" id="channel-thread-empty">
+              <div class="channel-thread-empty-icon">💬</div>
+              <p><strong>Selecciona una conversación</strong></p>
+              <p class="muted">Elige un contacto de la lista para comenzar a chatear</p>
+            </div>
+            <div class="channel-thread" id="channel-thread" hidden>
+              <div class="channel-thread-header">
+                <div class="avatar" id="ct-avatar">?</div>
+                <div class="channel-thread-heading">
+                  <strong id="ct-name">—</strong>
+                  <span class="muted" id="ct-phone">—</span>
+                </div>
+                <div class="channel-thread-controls">
+                  <div class="ct-dropdown">
+                    <button type="button" class="ct-chip" id="ct-perfil-trigger">
+                      <span class="ct-dot" id="ct-perfil-dot"></span>
+                      <span id="ct-perfil-label">Nuevo</span>
+                      <span class="filter-caret">▾</span>
+                    </button>
+                    <div class="ct-dropdown-panel" id="ct-perfil-panel" hidden></div>
+                  </div>
+
+                  <div class="ct-dropdown">
+                    <button type="button" class="ct-chip" id="ct-etapa-trigger">
+                      <span id="ct-etapa-icon">🌡️</span>
+                      <span id="ct-etapa-label">Sin etapa</span>
+                      <span class="filter-caret">▾</span>
+                    </button>
+                    <div class="ct-dropdown-panel" id="ct-etapa-panel" hidden></div>
+                  </div>
+
+                  <button type="button" class="ct-chip" id="ct-ia-toggle">🤖 IA On</button>
+                </div>
+              </div>
+              <div class="channel-thread-body" id="channel-thread-body"></div>
+              <div class="composer-status" id="composer-status" hidden></div>
+              <form class="channel-composer" id="channel-composer">
+                <div class="ct-dropdown">
+                  <button type="button" class="composer-icon-btn" id="composer-emoji-btn" aria-label="Emojis">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="9"/>
+                      <circle cx="8.5" cy="10" r="1" fill="currentColor" stroke="none"/>
+                      <circle cx="15.5" cy="10" r="1" fill="currentColor" stroke="none"/>
+                      <path d="M8 14.5c1 1.3 2.4 2 4 2s3-.7 4-2"/>
+                    </svg>
+                  </button>
+                  <div class="ct-dropdown-panel emoji-panel" id="composer-emoji-panel" hidden>
+                    <input type="search" id="composer-emoji-search" class="filter-panel-search" placeholder="Buscar emoji…" />
+                    <div class="emoji-grid" id="composer-emoji-grid"></div>
+                  </div>
+                </div>
+
+                <div class="ct-dropdown">
+                  <button type="button" class="composer-icon-btn" id="composer-attach-btn" aria-label="Adjuntar">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                      <line x1="12" y1="5" x2="12" y2="19"/>
+                      <line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                  </button>
+                  <div class="ct-dropdown-panel" id="composer-attach-panel" hidden>
+                    <div class="ct-option" data-attach="image">
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <path d="M21 15l-5-5L5 21"/>
+                      </svg>
+                      Foto
+                    </div>
+                    <div class="ct-option" data-attach="video">
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="6" width="14" height="12" rx="2"/>
+                        <path d="M16 10l6-3v10l-6-3z"/>
+                      </svg>
+                      Video
+                    </div>
+                    <div class="ct-option" data-attach="document">
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.5l-8.5 8.5a4 4 0 0 1-5.7-5.7l9-9a2.7 2.7 0 0 1 3.8 3.8l-8.9 8.9a1.3 1.3 0 0 1-1.9-1.9l7.8-7.8"/>
+                      </svg>
+                      Archivo
+                    </div>
+                  </div>
+                </div>
+                <input type="file" id="composer-file-input" hidden />
+
+                <input type="text" id="channel-composer-input" placeholder="Escribe un mensaje…" autocomplete="off" />
+
+                <button type="button" class="composer-icon-btn" id="composer-mic-btn" aria-label="Grabar audio">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="2" width="6" height="12" rx="3"/>
+                    <path d="M5 11a7 7 0 0 0 14 0"/>
+                    <line x1="12" y1="18" x2="12" y2="22"/>
+                    <line x1="8" y1="22" x2="16" y2="22"/>
+                  </svg>
+                </button>
+                <button type="submit" class="btn btn-primary" id="channel-composer-send">Enviar</button>
+              </form>
+            </div>
+          </section>
+
+          <aside class="channel-info-pane" id="channel-info-pane" hidden>
+            <div class="ci-header">
+              <div class="ci-header-title"><span class="ci-header-title-icon">👤</span> Info del Cliente</div>
+              <div class="ci-header-actions">
+                <button type="button" class="ci-icon-btn" disabled title="Agendar cita (próximamente)">📅</button>
+                <button type="button" class="ci-icon-btn" disabled title="Automatización (próximamente)">⚡</button>
+                <span class="ci-status-pill" id="ci-estado-pill"><span class="ci-status-dot"></span>Activo</span>
+              </div>
+            </div>
+
+            <form id="channel-info-form">
+              <div class="ci-body">
+                <button type="button" class="ci-product-btn" disabled title="Próximamente">
+                  <span>＋ Asignar producto</span>
+                  <span class="ci-product-icon">🧠</span>
+                </button>
+
+                <div class="ci-temp">
+                  <div class="ci-temp-row">
+                    <span class="ci-temp-title">Temperatura del Lead</span>
+                    <span class="ci-temp-value"><strong id="ci-temp-label">FRIO</strong> <span id="ci-temp-score" class="muted">0/100</span></span>
+                  </div>
+                  <div class="ci-temp-bar">
+                    <div class="ci-temp-fill" id="ci-temp-fill"></div>
+                    <span class="ci-temp-tick" style="left:33%"></span>
+                    <span class="ci-temp-tick" style="left:66%"></span>
+                  </div>
+                </div>
+
+                <div class="ci-sections">
+                  <details class="ci-section" open>
+                    <summary><span class="ci-drag">⠿</span> Asignación <span class="ci-chevron">▾</span></summary>
+                    <div class="ci-section-body">
+                      <label class="ci-field">
+                        <span class="ci-field-label">👤 Asignar asesor</span>
+                        <select id="ci-agent"><option value="">Sin asignar</option></select>
+                      </label>
+                      <button type="button" class="ci-ghost-btn" disabled title="Próximamente">⇄ Forzar reasignación</button>
+                    </div>
+                  </details>
+
+                  <details class="ci-section" open>
+                    <summary><span class="ci-drag">⠿</span> Etiquetas <span class="ci-chevron">▾</span></summary>
+                    <div class="ci-section-body">
+                      <div class="ci-tags" id="ci-tags-list"></div>
+                      <input type="text" class="ci-tag-input" id="ci-tag-input" placeholder="Nueva etiqueta…" hidden />
+                      <button type="button" class="ci-add-btn" id="ci-tags-add">＋ Agregar</button>
+                    </div>
+                  </details>
+
+                  <details class="ci-section" open>
+                    <summary><span class="ci-drag">⠿</span> Calificación <span class="ci-chevron">▾</span></summary>
+                    <div class="ci-section-body ci-calif-grid">
+                      <div class="ci-field">
+                        <span class="ci-field-label">◎ Necesidad <span class="ci-field-max" data-calif-max="necesidad">0/25</span></span>
+                        <details class="ci-calif-select" data-calif="necesidad">
+                          <summary><span data-calif-label="necesidad">Sin calificar</span><span class="ci-calif-caret">▾</span></summary>
+                          <div class="ci-calif-options" data-calif-options="necesidad"></div>
+                        </details>
+                      </div>
+                      <div class="ci-field">
+                        <span class="ci-field-label">$ Inversión <span class="ci-field-max" data-calif-max="inversion">0/30</span></span>
+                        <details class="ci-calif-select" data-calif="inversion">
+                          <summary><span data-calif-label="inversion">Sin calificar</span><span class="ci-calif-caret">▾</span></summary>
+                          <div class="ci-calif-options" data-calif-options="inversion"></div>
+                        </details>
+                      </div>
+                      <div class="ci-field">
+                        <span class="ci-field-label">🕐 Urgencia <span class="ci-field-max" data-calif-max="urgencia">0/25</span></span>
+                        <details class="ci-calif-select" data-calif="urgencia">
+                          <summary><span data-calif-label="urgencia">Sin calificar</span><span class="ci-calif-caret">▾</span></summary>
+                          <div class="ci-calif-options" data-calif-options="urgencia"></div>
+                        </details>
+                      </div>
+                      <div class="ci-field">
+                        <span class="ci-field-label">👤 Autoridad <span class="ci-field-max" data-calif-max="autoridad">0/20</span></span>
+                        <details class="ci-calif-select" data-calif="autoridad">
+                          <summary><span data-calif-label="autoridad">Sin calificar</span><span class="ci-calif-caret">▾</span></summary>
+                          <div class="ci-calif-options" data-calif-options="autoridad"></div>
+                        </details>
+                      </div>
+                    </div>
+                  </details>
+
+                  <details class="ci-section" open>
+                    <summary><span class="ci-drag">⠿</span> Datos del contacto <span class="ci-chevron">▾</span></summary>
+                    <div class="ci-section-body">
+                      <label class="ci-field">
+                        <span class="ci-field-label">📍 Ubicación</span>
+                        <input id="ci-zona" type="text" placeholder="Ciudad, zona o distrito" />
+                      </label>
+                      <label class="ci-field">
+                        <span class="ci-field-label">$ Presupuesto</span>
+                        <input id="ci-presupuesto" type="number" min="0" placeholder="Presupuesto estimado" />
+                      </label>
+                    </div>
+                  </details>
+
+                  <details class="ci-section" open>
+                    <summary><span class="ci-drag">⠿</span> Notas <span class="ci-chevron">▾</span></summary>
+                    <div class="ci-section-body">
+                      <label class="ci-field">
+                        <span class="ci-field-label">📄 Notas adicionales</span>
+                        <textarea id="ci-notas" rows="4" placeholder="Información relevante sobre el lead…"></textarea>
+                      </label>
+                    </div>
+                  </details>
+
+                  <details class="ci-section" open>
+                    <summary><span class="ci-drag">⠿</span> Campos personalizados <span class="ci-chevron">▾</span></summary>
+                    <div class="ci-section-body">
+                      <div id="ci-customfields-list"></div>
+                      <div class="ci-cf-actions">
+                        <button type="button" class="ci-ghost-btn" disabled title="Próximamente">✨ IA</button>
+                        <button type="button" class="ci-add-btn" id="ci-customfield-add-btn">＋ Agregar</button>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              </div>
+
+              <div class="ci-footer">
+                <span id="ci-status" class="settings-status"></span>
+                <button type="submit" class="btn btn-primary ci-save-btn">💾 Guardar cambios</button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ═══ Vista: placeholder para secciones sin construir aún ═══════ -->
+      <section id="view-placeholder" class="view" hidden>
+        <div class="placeholder-box">
+          <div class="placeholder-icon" id="placeholder-icon">🚧</div>
+          <h3 id="placeholder-title">Próximamente</h3>
+          <p class="muted" id="placeholder-text">Esta sección todavía no está construida.</p>
+        </div>
+      </section>
     </div>
-
-    <main>
-      <div class="table-wrap">
-        <table id="prospects-table">
-          <thead>
-            <tr>
-              <th data-sort="nombre">Nombre</th>
-              <th data-sort="phone">Teléfono</th>
-              <th data-sort="score">Score</th>
-              <th data-sort="label">Estado</th>
-              <th data-sort="prioridad">Prioridad</th>
-              <th data-sort="zona">Zona</th>
-              <th data-sort="presupuesto">Presupuesto</th>
-              <th data-sort="conversation_step">Paso</th>
-              <th data-sort="updated_at">Actualizado</th>
-            </tr>
-          </thead>
-          <tbody id="prospects-tbody">
-            <tr class="empty-row"><td colspan="9">Cargando…</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </main>
   </div>
 
   <!-- Drawer: detalle de prospecto + conversación -->
@@ -69,17 +469,50 @@
       </div>
       <div class="drawer-body">
         <div class="prospect-facts" id="prospect-facts"></div>
+
+        <h3 class="section-title">Gestión</h3>
+        <form id="manage-form" class="manage-form">
+          <label>
+            Etapa <span class="hint">(pipeline manual, ej. por_depositar, venta)</span>
+            <input id="m-etapa" name="etapa" type="text" placeholder="Sin etapa" />
+          </label>
+          <label>
+            Etiquetas <span class="hint">(separadas por coma)</span>
+            <input id="m-etiquetas" name="etiquetas" type="text" placeholder="activo, urgente…" />
+          </label>
+          <div class="manage-row">
+            <label>
+              Estado
+              <select id="m-estado" name="estado_conversacion">
+                <option value="activo">Activo</option>
+                <option value="inactivo">Inactivo</option>
+                <option value="cerrado">Cerrado</option>
+              </select>
+            </label>
+            <label>
+              Atendido por <span class="hint">(distinto al del canal = Prestado)</span>
+              <select id="m-agent" name="handled_by_agent_id">
+                <option value="">Vendedor del canal</option>
+              </select>
+            </label>
+          </div>
+          <div class="settings-actions">
+            <span id="manage-status" class="settings-status"></span>
+            <button type="submit" class="btn btn-primary">Guardar</button>
+          </div>
+        </form>
+
         <h3 class="section-title">Conversación</h3>
         <div id="messages-thread" class="thread"></div>
       </div>
     </aside>
   </div>
 
-  <!-- Modal: configuración del vendor -->
+  <!-- Modal: configuración del canal (IA) -->
   <div id="settings-overlay" class="overlay" hidden>
     <div class="modal">
       <div class="drawer-header">
-        <h2>Configuración del bot</h2>
+        <h2 id="settings-title">Configuración del bot</h2>
         <button class="btn-icon" id="settings-close" type="button" aria-label="Cerrar">✕</button>
       </div>
       <form id="settings-form" class="settings-form">
@@ -100,12 +533,187 @@
           <input id="f-key" name="ai_api_key" type="password" placeholder="sk-…" autocomplete="off" />
         </label>
         <label>
+          Palabras clave <span class="hint">(separadas por coma)</span>
+          <input id="f-keywords" name="keywords" type="text" placeholder="precio, ubicación, visita" />
+        </label>
+        <label>
           Prompt del sistema
           <textarea id="f-prompt" name="system_prompt" rows="12" placeholder="Instrucciones del asistente…"></textarea>
         </label>
         <div class="settings-actions">
           <span id="settings-status" class="settings-status"></span>
           <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: agregar canal -->
+  <div id="vendor-overlay" class="overlay" hidden>
+    <div class="modal">
+      <div class="drawer-header">
+        <h2>Agregar canal</h2>
+        <button class="btn-icon" id="vendor-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="vendor-form" class="settings-form">
+        <label>
+          Tipo de conexión*
+          <select id="vf-connection-type" name="connection_type">
+            <option value="evolution">🔲 Simple (QR)</option>
+            <option value="meta">🛡 Profesional (Meta oficial)</option>
+          </select>
+          <span class="hint" id="vf-connection-hint">Conecta con tu instancia de Evolution API (requiere Evolution self-hosted).</span>
+        </label>
+
+        <label>
+          Nombre del canal
+          <input name="name" type="text" placeholder="Ej. Karin Goicochea" required />
+        </label>
+
+        <div id="vf-evolution-fields" class="field-group">
+          <label>
+            Teléfono del asesor <span class="hint">(recibe notificación de leads calificados)</span>
+            <input name="phone_number" type="text" placeholder="51999999999" />
+          </label>
+          <label>
+            ID de instancia Evolution API
+            <input id="vf-evolution-instance-id" name="evolution_instance_id" type="text" placeholder="mi-instancia-evolution" required />
+          </label>
+        </div>
+
+        <div id="vf-meta-fields" class="field-group" hidden>
+          <label>
+            Teléfono del asesor <span class="hint">(recibe notificación de leads calificados)</span>
+            <input name="meta_phone_number" type="text" placeholder="51999999999" />
+          </label>
+          <label>
+            Phone Number ID <span class="hint">(Meta for Developers → WhatsApp → API Setup)</span>
+            <input id="vf-meta-phone-number-id" name="meta_phone_number_id" type="text" placeholder="123456789012345" />
+          </label>
+          <label>
+            WhatsApp Business Account ID (WABA ID)
+            <input id="vf-meta-waba-id" name="meta_waba_id" type="text" placeholder="123456789012345" />
+          </label>
+          <label>
+            Access token permanente
+            <input id="vf-meta-access-token" name="meta_access_token" type="password" placeholder="EAAG…" autocomplete="off" />
+          </label>
+          <p class="hint">
+            Genera un token permanente desde tu Meta Business dashboard (System User con permiso
+            <code>whatsapp_business_messaging</code>) y pégalo aquí.
+          </p>
+        </div>
+
+        <label>
+          Prompt <span class="hint">(opcional — lo puedes agregar o editar después desde Configuración)</span>
+          <textarea name="system_prompt" rows="6" placeholder="Describe cómo debe comportarse la IA en este canal. Se específico sobre el tono, estilo y objetivos…"></textarea>
+        </label>
+
+        <div class="settings-actions">
+          <span id="vendor-status" class="settings-status"></span>
+          <button type="submit" class="btn btn-primary" id="vendor-submit-btn">Crear canal</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: crear vendedor (agente humano) -->
+  <div id="agent-overlay" class="overlay" hidden>
+    <div class="modal">
+      <div class="drawer-header">
+        <h2>Crear vendedor</h2>
+        <button class="btn-icon" id="agent-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="agent-form" class="settings-form">
+        <label>
+          Nombre
+          <input name="name" type="text" placeholder="Nombre del vendedor" required />
+        </label>
+        <label>
+          Correo
+          <input name="email" type="email" placeholder="correo@ejemplo.com" />
+        </label>
+        <label>
+          Teléfono
+          <input name="phone" type="text" placeholder="51999999999" />
+        </label>
+        <div class="settings-actions">
+          <span id="agent-status" class="settings-status"></span>
+          <button type="submit" class="btn btn-primary">Crear vendedor</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: asignar vendedor a un canal -->
+  <div id="assign-overlay" class="overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="drawer-header">
+        <h2>Asignar vendedor</h2>
+        <button class="btn-icon" id="assign-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="assign-form" class="settings-form">
+        <label>
+          Vendedor
+          <select id="assign-select" name="assigned_agent_id">
+            <option value="">Sin asignar</option>
+          </select>
+        </label>
+        <div class="settings-actions">
+          <span id="assign-status" class="settings-status"></span>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: crear campo personalizado (definición global, valores por chat) -->
+  <div id="customfield-overlay" class="overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="drawer-header">
+        <h2>✨ Nuevo Campo Personalizado</h2>
+        <button class="btn-icon" id="customfield-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="customfield-form" class="settings-form">
+        <p class="muted" style="margin:-8px 0 0;">Crea un campo único para capturar información específica de tus leads.</p>
+        <label>
+          Nombre del campo
+          <input name="name" type="text" placeholder="Ej: Empresa, Fecha de nacimiento…" required />
+        </label>
+        <div class="cf-type-field">
+          <span class="cf-type-field-label">Tipo de campo</span>
+          <div class="ct-dropdown">
+            <button type="button" class="cf-type-trigger" id="cf-type-trigger">
+              <span class="cf-type-trigger-icon" id="cf-type-trigger-icon">T</span>
+              <span id="cf-type-trigger-label">Texto</span>
+              <span class="filter-caret">▾</span>
+            </button>
+            <div class="ct-dropdown-panel cf-type-panel" id="cf-type-panel" hidden></div>
+          </div>
+        </div>
+        <input type="hidden" name="field_type" id="cf-type-value" value="text" />
+
+        <div class="field-group" id="cf-options-group" hidden>
+          <label>
+            Opciones <span class="hint">(una por línea)</span>
+            <textarea name="options_raw" class="cf-options-textarea" rows="4" placeholder="Opción 1&#10;Opción 2"></textarea>
+          </label>
+        </div>
+
+        <label>
+          Texto de ayuda <span class="hint">(opcional)</span>
+          <input name="help_text" type="text" placeholder="Ej: Ingresa el nombre de la empresa" />
+        </label>
+
+        <label class="cf-required-box">
+          <input type="checkbox" name="required" />
+          <span><strong>Campo obligatorio</strong><span class="hint hint-block">El usuario deberá completar este campo</span></span>
+        </label>
+
+        <div class="settings-actions">
+          <span id="customfield-status" class="settings-status"></span>
+          <button type="button" class="btn btn-ghost" id="customfield-cancel-btn">Cancelar</button>
+          <button type="submit" class="btn btn-primary">＋ Crear campo</button>
         </div>
       </form>
     </div>
