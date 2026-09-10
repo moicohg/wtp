@@ -16,7 +16,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // ── Estado ───────────────────────────────────────────────────────────────────
 
 const PLACEHOLDER_INFO = {
-  'catalogo-ia': ['🧠', 'Catálogo IA', 'Biblioteca de prompts y respuestas reutilizables para los bots. Todavía no está construida.'],
   automatizacion: ['🔁', 'Automatización', 'Reglas y flujos automáticos (difusiones, recordatorios, etc). Todavía no está construida.'],
   disponibilidad: ['🗓', 'Disponibilidad', 'Calendario de horarios/citas de los asesores. Todavía no está construida.'],
 };
@@ -79,6 +78,12 @@ Object.assign(state, {
 
   products: [],
   productsSearch: '',
+
+  catalogFiles: [],
+  catalogSearch: '',
+  catalogChannelFilter: '',
+  catalogMultiSelect: false,
+  catalogSelectedIds: new Set(),
 
   // Composer: grabación de nota de voz
   mediaRecorder: null,
@@ -196,6 +201,27 @@ const productStatus = document.getElementById('product-status');
 const autofillOverlay = document.getElementById('autofill-overlay');
 const autofillForm = document.getElementById('autofill-form');
 const autofillStatus = document.getElementById('autofill-status');
+
+const viewCatalogo = document.getElementById('view-catalogo');
+const catalogChannelFilterSelect = document.getElementById('catalog-channel-filter');
+const catalogAnalyzeBtn = document.getElementById('catalog-analyze-btn');
+const catalogMultiToggle = document.getElementById('catalog-multi-toggle');
+const catalogSearchInput = document.getElementById('catalog-search');
+const catalogBulkBar = document.getElementById('catalog-bulk-bar');
+const catalogBulkCount = document.getElementById('catalog-bulk-count');
+const catalogBulkDeleteBtn = document.getElementById('catalog-bulk-delete-btn');
+const catalogListEl = document.getElementById('catalog-list');
+const catalogNewBtn = document.getElementById('catalog-new-btn');
+
+const catalogOverlay = document.getElementById('catalog-overlay');
+const catalogForm = document.getElementById('catalog-form');
+const catalogStatus = document.getElementById('catalog-status');
+const catalogVendorChecklist = document.getElementById('catalog-vendor-checklist');
+
+const catalogAnalyzeOverlay = document.getElementById('catalog-analyze-overlay');
+const catalogAnalyzeForm = document.getElementById('catalog-analyze-form');
+const catalogAnalyzeStatus = document.getElementById('catalog-analyze-status');
+const catalogAnalyzeVendorSelect = document.getElementById('catalog-analyze-vendor');
 
 const inboxSearchInput = document.getElementById('inbox-search');
 const inboxCanalesTrigger = document.querySelector('.filter-trigger[data-filter="canales"]');
@@ -343,7 +369,8 @@ async function setSection(section) {
   const isChannel = section.startsWith('vendor:');
   const isDashboard = section === 'dashboard';
   const isProductos = section === 'productos';
-  const isPlaceholder = !isCanales && !isLeads && !isInbox && !isChannel && !isDashboard && !isProductos;
+  const isCatalogo = section === 'catalogo-ia';
+  const isPlaceholder = !isCanales && !isLeads && !isInbox && !isChannel && !isDashboard && !isProductos && !isCatalogo;
 
   viewDashboard.hidden = !isDashboard;
   viewCanales.hidden = !isCanales;
@@ -351,10 +378,12 @@ async function setSection(section) {
   viewInbox.hidden = !isInbox;
   viewChannel.hidden = !isChannel;
   viewProductos.hidden = !isProductos;
+  viewCatalogo.hidden = !isCatalogo;
   viewPlaceholder.hidden = !isPlaceholder;
   document.querySelector('[data-section-group="canales"]').hidden = !isCanales;
   document.querySelector('[data-section-group="leads"]').hidden = !isLeads;
   document.querySelector('[data-section-group="productos"]').hidden = !isProductos;
+  document.querySelector('[data-section-group="catalogo-ia"]').hidden = !isCatalogo;
 
   if (isDashboard) {
     topbarTitle.textContent = 'Dashboard';
@@ -366,6 +395,9 @@ async function setSection(section) {
   } else if (isProductos) {
     topbarTitle.textContent = 'Productos';
     await loadProducts();
+  } else if (isCatalogo) {
+    topbarTitle.textContent = 'Catálogo IA';
+    await loadCatalogFiles();
   } else if (section === 'bandeja-global') {
     topbarTitle.textContent = 'Bandeja Global';
     state.inboxVendorLock = null;
@@ -413,6 +445,7 @@ async function loadVendors() {
 
   renderVendorCards();
   renderSidenavVendors();
+  renderCatalogVendorOptions();
 }
 
 async function loadAgents() {
@@ -621,6 +654,266 @@ async function generateProductCatalog(ev) {
   }
 }
 autofillForm?.addEventListener('submit', generateProductCatalog);
+
+// ── Catálogo IA ──────────────────────────────────────────────────────────────
+// Archivos (productos/propiedades/servicios) que la IA puede mencionar/enviar
+// en chat. Cada archivo se asigna a uno o más canales (vendors.id[]).
+
+function vendorName(id) {
+  return state.vendors.find((v) => v.id === id)?.name ?? '—';
+}
+
+function renderCatalogVendorOptions() {
+  const options = state.vendors.map((v) => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join('');
+  catalogChannelFilterSelect.innerHTML = '<option value="">Todos los canales</option>' + options;
+  catalogAnalyzeVendorSelect.innerHTML = '<option value="">Selecciona un canal…</option>' + options;
+
+  catalogVendorChecklist.innerHTML = state.vendors.length
+    ? state.vendors
+        .map(
+          (v) => `
+        <label class="filter-option">
+          <input type="checkbox" name="vendor_ids" value="${v.id}" />
+          ${escapeHtml(v.name)}
+        </label>`
+        )
+        .join('')
+    : '<p class="muted filter-panel-empty">No hay canales creados todavía.</p>';
+}
+
+async function loadCatalogFiles() {
+  catalogListEl.innerHTML = '<p class="muted">Cargando catálogo…</p>';
+  const { data, error } = await supabase.from('catalog_files').select('*').order('created_at', { ascending: false });
+  if (error) {
+    console.error('Error cargando catálogo IA:', error.message);
+    catalogListEl.innerHTML = `<p class="muted">Error al cargar el catálogo: ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  state.catalogFiles = data ?? [];
+  renderCatalogList();
+}
+
+function renderCatalogBulkBar() {
+  const count = state.catalogSelectedIds.size;
+  catalogBulkBar.hidden = !state.catalogMultiSelect || count === 0;
+  catalogBulkCount.textContent = `${count} seleccionado${count === 1 ? '' : 's'}`;
+}
+
+function renderCatalogList() {
+  const q = state.catalogSearch.trim().toLowerCase();
+  const channel = state.catalogChannelFilter;
+
+  const rows = state.catalogFiles.filter((f) => {
+    if (channel && !(f.vendor_ids ?? []).includes(channel)) return false;
+    if (q && !f.name.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  if (!rows.length) {
+    catalogListEl.innerHTML = state.catalogFiles.length
+      ? `<div class="products-empty">
+           <div class="products-empty-icon">📖</div>
+           <h3>Sin resultados</h3>
+           <p class="muted">No hay archivos que coincidan con tu búsqueda o filtro.</p>
+         </div>`
+      : `<div class="products-empty">
+           <div class="products-empty-icon">📖</div>
+           <h3>Catálogo vacío</h3>
+           <p class="muted">Crea un archivo a mano o usa "Analizar prompt" para detectarlos automáticamente.</p>
+           <button type="button" class="btn btn-ghost" id="catalog-empty-create-btn">＋ Crear archivo</button>
+         </div>`;
+    if (!state.catalogFiles.length) {
+      document.getElementById('catalog-empty-create-btn')?.addEventListener('click', openCatalogModal);
+    }
+    renderCatalogBulkBar();
+    return;
+  }
+
+  catalogListEl.innerHTML = rows
+    .map((f) => {
+      const tags = (f.vendor_ids ?? []).map((id) => `<span class="catalog-card-tag">${escapeHtml(vendorName(id))}</span>`).join('');
+      const checkbox = state.catalogMultiSelect
+        ? `<input type="checkbox" class="catalog-card-check" data-select-catalog="${f.id}" ${state.catalogSelectedIds.has(f.id) ? 'checked' : ''} />`
+        : '';
+      return `
+        <div class="product-card catalog-card" data-id="${f.id}">
+          <div class="catalog-card-top">
+            <div style="display:flex; align-items:flex-start; gap:8px;">
+              ${checkbox}
+              <span class="product-card-name">${escapeHtml(f.name)}</span>
+            </div>
+            <button type="button" class="btn-icon product-card-delete" data-delete-catalog="${f.id}" title="Eliminar" aria-label="Eliminar">🗑</button>
+          </div>
+          ${tags ? `<div class="catalog-card-tags">${tags}</div>` : '<p class="muted" style="margin:0;">Sin canales asignados</p>'}
+        </div>`;
+    })
+    .join('');
+  renderCatalogBulkBar();
+}
+
+catalogSearchInput?.addEventListener('input', () => {
+  state.catalogSearch = catalogSearchInput.value;
+  renderCatalogList();
+});
+catalogChannelFilterSelect?.addEventListener('change', () => {
+  state.catalogChannelFilter = catalogChannelFilterSelect.value;
+  renderCatalogList();
+});
+catalogMultiToggle?.addEventListener('change', () => {
+  state.catalogMultiSelect = catalogMultiToggle.checked;
+  state.catalogSelectedIds.clear();
+  renderCatalogList();
+});
+
+catalogListEl?.addEventListener('click', async (ev) => {
+  const delBtn = ev.target.closest('[data-delete-catalog]');
+  if (delBtn) {
+    const id = delBtn.dataset.deleteCatalog;
+    if (!confirm('¿Eliminar este archivo del catálogo?')) return;
+    const { error } = await supabase.from('catalog_files').delete().eq('id', id);
+    if (error) {
+      alert(`Error al eliminar: ${error.message}`);
+      return;
+    }
+    state.catalogFiles = state.catalogFiles.filter((f) => f.id !== id);
+    state.catalogSelectedIds.delete(id);
+    renderCatalogList();
+    return;
+  }
+});
+catalogListEl?.addEventListener('change', (ev) => {
+  const checkbox = ev.target.closest('[data-select-catalog]');
+  if (!checkbox) return;
+  const id = checkbox.dataset.selectCatalog;
+  if (checkbox.checked) state.catalogSelectedIds.add(id);
+  else state.catalogSelectedIds.delete(id);
+  renderCatalogBulkBar();
+});
+
+catalogBulkDeleteBtn?.addEventListener('click', async () => {
+  const ids = Array.from(state.catalogSelectedIds);
+  if (!ids.length) return;
+  if (!confirm(`¿Eliminar ${ids.length} archivo(s) del catálogo?`)) return;
+  const { error } = await supabase.from('catalog_files').delete().in('id', ids);
+  if (error) {
+    alert(`Error al eliminar: ${error.message}`);
+    return;
+  }
+  state.catalogFiles = state.catalogFiles.filter((f) => !ids.includes(f.id));
+  state.catalogSelectedIds.clear();
+  renderCatalogList();
+});
+
+function openCatalogModal() {
+  catalogForm.reset();
+  catalogStatus.textContent = '';
+  catalogStatus.className = 'settings-status';
+  catalogOverlay.hidden = false;
+}
+function closeCatalogModal() {
+  catalogOverlay.hidden = true;
+}
+catalogNewBtn?.addEventListener('click', openCatalogModal);
+document.getElementById('catalog-modal-close')?.addEventListener('click', closeCatalogModal);
+document.getElementById('catalog-cancel-btn')?.addEventListener('click', closeCatalogModal);
+catalogOverlay?.addEventListener('click', (ev) => {
+  if (ev.target === catalogOverlay) closeCatalogModal();
+});
+
+async function createCatalogFile(ev) {
+  ev.preventDefault();
+  const fd = new FormData(catalogForm);
+  const name = String(fd.get('name') || '').trim();
+  if (!name) {
+    catalogStatus.textContent = 'El nombre es obligatorio.';
+    catalogStatus.className = 'settings-status err';
+    return;
+  }
+  const vendorIds = fd.getAll('vendor_ids');
+
+  catalogStatus.textContent = 'Creando…';
+  catalogStatus.className = 'settings-status';
+
+  const { error } = await supabase.from('catalog_files').insert({ name, vendor_ids: vendorIds });
+
+  if (error) {
+    catalogStatus.textContent = `Error: ${error.message}`;
+    catalogStatus.className = 'settings-status err';
+    return;
+  }
+
+  catalogStatus.textContent = 'Archivo creado ✓';
+  catalogStatus.className = 'settings-status ok';
+  catalogForm.reset();
+  await loadCatalogFiles();
+  setTimeout(closeCatalogModal, 500);
+}
+catalogForm?.addEventListener('submit', createCatalogFile);
+
+function openCatalogAnalyzeModal() {
+  catalogAnalyzeForm.reset();
+  catalogAnalyzeStatus.textContent = '';
+  catalogAnalyzeStatus.className = 'settings-status';
+  catalogAnalyzeOverlay.hidden = false;
+}
+function closeCatalogAnalyzeModal() {
+  catalogAnalyzeOverlay.hidden = true;
+}
+catalogAnalyzeBtn?.addEventListener('click', openCatalogAnalyzeModal);
+document.getElementById('catalog-analyze-modal-close')?.addEventListener('click', closeCatalogAnalyzeModal);
+document.getElementById('catalog-analyze-cancel-btn')?.addEventListener('click', closeCatalogAnalyzeModal);
+catalogAnalyzeOverlay?.addEventListener('click', (ev) => {
+  if (ev.target === catalogAnalyzeOverlay) closeCatalogAnalyzeModal();
+});
+
+async function analyzeCatalogPrompt(ev) {
+  ev.preventDefault();
+  const vendorId = catalogAnalyzeVendorSelect.value;
+  if (!vendorId) {
+    catalogAnalyzeStatus.textContent = 'Selecciona un canal.';
+    catalogAnalyzeStatus.className = 'settings-status err';
+    return;
+  }
+  const vendor = state.vendors.find((v) => v.id === vendorId);
+  const prompt = (vendor?.system_prompt || '').trim();
+  if (!prompt) {
+    catalogAnalyzeStatus.textContent = 'Este canal no tiene un prompt configurado todavía.';
+    catalogAnalyzeStatus.className = 'settings-status err';
+    return;
+  }
+
+  catalogAnalyzeStatus.textContent = 'Analizando prompt con IA…';
+  catalogAnalyzeStatus.className = 'settings-status';
+
+  try {
+    const resp = await fetch(`${FUNCTIONS_URL}/catalog-analyze-prompt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}`, apikey: SUPABASE_ANON_KEY },
+      body: JSON.stringify({ prompt }),
+    });
+    const json = await resp.json();
+    if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
+
+    if (!json.items.length) {
+      catalogAnalyzeStatus.textContent = 'No se detectaron productos o propiedades en este prompt.';
+      catalogAnalyzeStatus.className = 'settings-status err';
+      return;
+    }
+
+    const rows = json.items.map((it) => ({ name: it.name, vendor_ids: [vendorId] }));
+    const { error } = await supabase.from('catalog_files').insert(rows);
+    if (error) throw new Error(error.message);
+
+    catalogAnalyzeStatus.textContent = `${rows.length} archivo(s) detectado(s) ✓`;
+    catalogAnalyzeStatus.className = 'settings-status ok';
+    await loadCatalogFiles();
+    setTimeout(closeCatalogAnalyzeModal, 700);
+  } catch (err) {
+    catalogAnalyzeStatus.textContent = `Error: ${err.message}`;
+    catalogAnalyzeStatus.className = 'settings-status err';
+  }
+}
+catalogAnalyzeForm?.addEventListener('submit', analyzeCatalogPrompt);
 
 async function loadProspects() {
   if (!state.vendorId) return;
@@ -2889,6 +3182,8 @@ document.addEventListener('keydown', (ev) => {
   if (!customfieldOverlay.hidden) customfieldOverlay.hidden = true;
   if (!productOverlay.hidden) closeProductModal();
   if (!autofillOverlay.hidden) closeAutofillModal();
+  if (!catalogOverlay.hidden) closeCatalogModal();
+  if (!catalogAnalyzeOverlay.hidden) closeCatalogAnalyzeModal();
 });
 
 // ── Init ─────────────────────────────────────────────────────────────────────

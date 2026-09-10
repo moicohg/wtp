@@ -52,6 +52,9 @@
             <button id="products-autofill-btn" class="btn btn-ghost" type="button">✨ Autocompletar</button>
             <button id="products-new-btn" class="btn btn-primary" type="button">＋ Nuevo producto</button>
           </div>
+          <div class="topbar-actions-group" data-section-group="catalogo-ia" hidden>
+            <button id="catalog-new-btn" class="btn btn-primary" type="button">＋ Nuevo</button>
+          </div>
         </div>
       </header>
 
@@ -96,6 +99,44 @@
 
         <div id="products-list" class="products-grid">
           <p class="muted">Cargando productos…</p>
+        </div>
+      </section>
+
+      <!-- ═══ Vista: Catálogo IA ═════════════════════════════════════════ -->
+      <section id="view-catalogo" class="view" hidden>
+        <div class="page-heading">
+          <div class="page-heading-icon">📖</div>
+          <div>
+            <h3>Catálogo IA</h3>
+            <p class="muted">Archivos que la IA puede enviar cuando un cliente pregunte por un producto o propiedad</p>
+          </div>
+        </div>
+
+        <div class="catalog-toolbar">
+          <select id="catalog-channel-filter" aria-label="Filtrar por canal">
+            <option value="">Todos los canales</option>
+          </select>
+          <button id="catalog-analyze-btn" class="btn btn-ghost" type="button">✨ Analizar prompt</button>
+          <label class="switch-field">
+            <span class="switch">
+              <input type="checkbox" id="catalog-multi-toggle" />
+              <span class="switch-track"></span>
+            </span>
+            Envío múltiple
+          </label>
+          <div class="inbox-search-wrap catalog-search-wrap">
+            <span class="inbox-search-icon">🔍</span>
+            <input id="catalog-search" type="search" placeholder="Buscar en el catálogo…" />
+          </div>
+        </div>
+
+        <div id="catalog-bulk-bar" class="catalog-bulk-bar" hidden>
+          <span id="catalog-bulk-count">0 seleccionados</span>
+          <button id="catalog-bulk-delete-btn" class="btn btn-ghost" type="button">🗑 Eliminar seleccionados</button>
+        </div>
+
+        <div id="catalog-list" class="products-grid">
+          <p class="muted">Cargando catálogo…</p>
         </div>
       </section>
 
@@ -799,6 +840,57 @@
           <span id="autofill-status" class="settings-status"></span>
           <button type="button" class="btn btn-ghost" id="autofill-cancel-btn">Cancelar</button>
           <button type="submit" class="btn btn-primary">✨ Generar catálogo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: crear archivo del catálogo IA -->
+  <div id="catalog-overlay" class="overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="drawer-header">
+        <h2>Nuevo archivo del catálogo</h2>
+        <button class="btn-icon" id="catalog-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="catalog-form" class="settings-form">
+        <p class="muted" style="margin:-8px 0 0;">Agrega un producto, propiedad o servicio y asígnale los canales que lo ofrecen.</p>
+        <label>
+          Nombre
+          <input name="name" type="text" placeholder="Ej: DIPLOMADO CIRO 2026, EM-RV-01 — Depto en Surco" required />
+        </label>
+        <div class="field-group">
+          <span class="cf-type-field-label">Canales asignados</span>
+          <div id="catalog-vendor-checklist" class="catalog-vendor-list"></div>
+          <p class="muted" style="margin:0;">Puedes dejarlos vacíos y asignarlos después.</p>
+        </div>
+        <div class="settings-actions">
+          <span id="catalog-status" class="settings-status"></span>
+          <button type="button" class="btn btn-ghost" id="catalog-cancel-btn">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Crear</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: analizar prompt de un canal con IA -->
+  <div id="catalog-analyze-overlay" class="overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="drawer-header">
+        <h2>✨ Analizar prompt</h2>
+        <button class="btn-icon" id="catalog-analyze-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="catalog-analyze-form" class="settings-form">
+        <p class="muted" style="margin:-8px 0 0;">La IA lee el prompt del canal y detecta qué productos o propiedades ofrece, para crearlos en el catálogo.</p>
+        <label>
+          Canal
+          <select id="catalog-analyze-vendor" name="vendor_id" required>
+            <option value="">Selecciona un canal…</option>
+          </select>
+        </label>
+        <div class="settings-actions">
+          <span id="catalog-analyze-status" class="settings-status"></span>
+          <button type="button" class="btn btn-ghost" id="catalog-analyze-cancel-btn">Cancelar</button>
+          <button type="submit" class="btn btn-primary">✨ Analizar</button>
         </div>
       </form>
     </div>
