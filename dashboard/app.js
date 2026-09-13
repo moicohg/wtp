@@ -18,14 +18,18 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const PLACEHOLDER_INFO = {};
 
 const AGENT_STATUS_META = {
-  listo: { icon: '⚡', label: 'Listo para vender', color: 'ok' },
-  atendiendo: { icon: '🎧', label: 'Atendiendo cliente', color: 'cold' },
-  pausa: { icon: '☕', label: 'Pausa breve', color: 'warn' },
-  fuera_de_atencion: { icon: '🌙', label: 'Fuera de atención', color: 'off' },
+  listo: { icon: '⚡', label: 'Listo para vender', color: 'ok', desc: 'Recibís leads y ofertas de reasignación' },
+  atendiendo: { icon: '🎧', label: 'Atendiendo cliente', color: 'cold', desc: 'Atendiendo un lead activamente' },
+  pausa: { icon: '☕', label: 'Pausa breve', color: 'warn', desc: 'Pausa temporal — máximo 10 minutos' },
+  fuera_de_atencion: { icon: '🌙', label: 'Fuera de atención', color: 'off', desc: 'No recibís leads ni ofertas' },
   inactivo_sistema: { icon: '⛔', label: 'Inactivo (sistema)', color: 'danger' },
   difusiones: { icon: '📣', label: 'Enviando difusiones', color: 'purple' },
 };
 const AGENT_STATUS_ORDER = ['listo', 'atendiendo', 'pausa', 'fuera_de_atencion', 'inactivo_sistema', 'difusiones'];
+// Estados que un vendedor puede elegirse a sí mismo desde el selector rápido
+// del topbar (los otros dos los pone el sistema: inactividad y difusiones).
+const MANUAL_STATUS_ORDER = ['listo', 'atendiendo', 'pausa', 'fuera_de_atencion'];
+const MY_AGENT_STORAGE_KEY = 'wtp_my_agent_id';
 
 // ── Roles y permisos ─────────────────────────────────────────────────────────
 // Solo define los permisos disponibles y cómo se agrupan en la UI de
@@ -169,6 +173,7 @@ const state = {
   vendors: [],
   agents: [],
   currentUser: { name: 'Mi cuenta', email: 'Pendiente de login' }, // placeholder hasta conectar auth real
+  myAgentId: localStorage.getItem(MY_AGENT_STORAGE_KEY) || null, // "quién soy" para el selector de estado del topbar, hasta que haya login real
   configTab: 'vendedores',
   roles: [],
   expandedRoleIds: new Set(),
@@ -750,6 +755,12 @@ async function loadAgents() {
   document.getElementById('m-agent').innerHTML = '<option value="">Vendedor del canal</option>' + agentOptions;
   ciAgent.innerHTML = '<option value="">Vendedor del canal</option>' + agentOptions;
   renderVendedoresFilter();
+
+  if (state.myAgentId && !state.agents.some((a) => a.id === state.myAgentId)) {
+    state.myAgentId = null;
+    localStorage.removeItem(MY_AGENT_STORAGE_KEY);
+  }
+  renderStatusPill();
 }
 
 // Campos personalizados: definición global (compartida en todos los canales y
@@ -4624,6 +4635,119 @@ assignOverlay.addEventListener('click', (ev) => {
 });
 assignForm.addEventListener('submit', saveAssign);
 
+// ── Estado rápido del vendedor (selector en el topbar) ───────────────────────
+// Como el panel no tiene login todavía, "quién soy" se guarda en este
+// navegador (localStorage) en vez de venir de una sesión real.
+
+const statusPillWrap = document.getElementById('status-pill-wrap');
+const statusPillTrigger = document.getElementById('status-pill-trigger');
+const statusPillDot = document.getElementById('status-pill-dot');
+const statusPillLabel = document.getElementById('status-pill-label');
+const statusPillPanel = document.getElementById('status-pill-panel');
+
+function myAgent() {
+  return state.agents.find((a) => a.id === state.myAgentId) || null;
+}
+
+function renderStatusPill() {
+  const agent = myAgent();
+  if (!agent) {
+    statusPillDot.style.background = 'var(--text-dim)';
+    statusPillLabel.textContent = 'Elegir usuario';
+    return;
+  }
+  const meta = AGENT_STATUS_META[agent.status] ?? AGENT_STATUS_META.fuera_de_atencion;
+  statusPillDot.style.background = `var(--${meta.color})`;
+  statusPillLabel.textContent = meta.label;
+}
+
+function renderStatusPanel() {
+  const agent = myAgent();
+  if (!agent) {
+    statusPillPanel.innerHTML = `
+      <div class="status-menu-title">¿Quién eres?</div>
+      ${
+        state.agents.length
+          ? state.agents
+              .map(
+                (a) => `
+                <button type="button" class="status-menu-option" data-pick-agent="${a.id}">
+                  <span class="avatar" style="background:${colorFor(a.id)}">${initials(a.name)}</span>
+                  <span class="status-menu-text"><strong>${escapeHtml(a.name)}</strong></span>
+                </button>
+              `
+              )
+              .join('')
+          : `<p class="muted" style="padding:0 16px 14px;">No hay vendedores creados todavía.</p>`
+      }
+    `;
+    return;
+  }
+
+  statusPillPanel.innerHTML = `
+    <div class="status-menu-title">Cambiar estado</div>
+    ${MANUAL_STATUS_ORDER.map((s) => {
+      const meta = AGENT_STATUS_META[s];
+      const isActive = agent.status === s;
+      return `
+        <button type="button" class="status-menu-option ${isActive ? 'is-active' : ''}" data-set-status="${s}">
+          <span class="status-menu-icon-box" style="background:var(--${meta.color}-bg)">${meta.icon}</span>
+          <span class="status-menu-text">
+            <strong>${escapeHtml(meta.label)}</strong>
+            <span class="muted">${escapeHtml(meta.desc)}</span>
+          </span>
+          ${isActive ? '<span class="status-menu-check">✓</span>' : `<span class="status-menu-swatch" style="background:var(--${meta.color})"></span>`}
+        </button>
+      `;
+    }).join('')}
+    <button type="button" class="status-menu-footer-link" id="status-menu-switch-user">${escapeHtml(agent.name)} · cambiar de usuario</button>
+  `;
+}
+
+function openStatusPanel() {
+  renderStatusPanel();
+  statusPillPanel.hidden = false;
+}
+function closeStatusPanel() {
+  statusPillPanel.hidden = true;
+}
+
+statusPillTrigger.addEventListener('click', (ev) => {
+  ev.stopPropagation();
+  if (statusPillPanel.hidden) openStatusPanel();
+  else closeStatusPanel();
+});
+
+statusPillPanel.addEventListener('click', async (ev) => {
+  const pick = ev.target.closest('[data-pick-agent]');
+  if (pick) {
+    state.myAgentId = pick.dataset.pickAgent;
+    localStorage.setItem(MY_AGENT_STORAGE_KEY, state.myAgentId);
+    renderStatusPill();
+    closeStatusPanel();
+    return;
+  }
+  if (ev.target.closest('#status-menu-switch-user')) {
+    state.myAgentId = null;
+    localStorage.removeItem(MY_AGENT_STORAGE_KEY);
+    renderStatusPill();
+    renderStatusPanel();
+    return;
+  }
+  const setStatus = ev.target.closest('[data-set-status]');
+  if (setStatus) {
+    const agent = myAgent();
+    if (!agent) return;
+    closeStatusPanel();
+    await setAgentStatus(agent.id, setStatus.dataset.setStatus);
+    renderStatusPill();
+  }
+});
+
+document.addEventListener('click', (ev) => {
+  if (!statusPillPanel.hidden && !statusPillWrap.contains(ev.target)) closeStatusPanel();
+});
+
 function renderAccountChip() {
   document.getElementById('account-name').textContent = state.currentUser.name;
   document.getElementById('account-email').textContent = state.currentUser.email;
@@ -4648,6 +4772,7 @@ document.addEventListener('keydown', (ev) => {
   if (!agentOverlay.hidden) agentOverlay.hidden = true;
   if (!assignOverlay.hidden) assignOverlay.hidden = true;
   if (!roleOverlay.hidden) roleOverlay.hidden = true;
+  if (!statusPillPanel.hidden) closeStatusPanel();
   if (!customfieldOverlay.hidden) customfieldOverlay.hidden = true;
   if (!productOverlay.hidden) closeProductModal();
   if (!autofillOverlay.hidden) closeAutofillModal();
