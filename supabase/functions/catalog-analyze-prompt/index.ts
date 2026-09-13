@@ -3,25 +3,22 @@
 // Lo llama el botón "✨ Analizar prompt" de la sección Catálogo IA. Usa
 // OpenAI (mismo secret OPENAI_API_KEY que product-autocomplete).
 
+import { getCaller, handleError, json, preflight, requirePermission } from '../_shared/auth.ts';
+
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 const OPENAI_MODEL = 'gpt-4o-mini';
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
-}
-
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
-  if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+  const early = preflight(req);
+  if (early) return early;
+
+  // Solo usuarios con sesión y permiso: evita gastar la clave de OpenAI con
+  // la sola clave publicable.
+  try {
+    requirePermission(await getCaller(req), 'config.products');
+  } catch (err) {
+    return handleError(err);
+  }
 
   if (!OPENAI_API_KEY) {
     return json({ error: 'OPENAI_API_KEY no está configurada en las Edge Functions' }, 500);

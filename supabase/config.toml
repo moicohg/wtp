@@ -1,1 +1,10 @@
 project_id = "crmwtp"
+
+# Espejo de la configuración viva de los webhooks: Meta llama sin JWT. Sin
+# estas entradas, un `supabase functions deploy` genérico los redesplegaría
+# con verify_jwt = true y Meta dejaría de entregar mensajes.
+[functions.meta-webhook]
+verify_jwt = false
+
+[functions.whatsapp-handler]
+verify_jwt = true

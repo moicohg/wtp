@@ -1,23 +1,11 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { admin as supabase, getCaller, handleError, json, preflight, requirePermission, type Caller } from '../_shared/auth.ts';
 
-// ── Supabase (service_role para bypass RLS) ───────────────────────────────────
-
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
+// Conecta un canal de Meta (WhatsApp Cloud API). Exige sesión con el permiso
+// config.manage_channels; el canal queda en la empresa del que llama.
 
 const META_APP_ID     = Deno.env.get('META_APP_ID')!;
 const META_APP_SECRET = Deno.env.get('META_APP_SECRET')!;
 const GRAPH_VERSION   = 'v20.0';
-
-// ── CORS ─────────────────────────────────────────────────────────────────────
-
-const CORS = {
-  'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
 
 const DEFAULT_MODEL: Record<string, string> = {
   anthropic: 'claude-sonnet-4-6',
@@ -26,18 +14,19 @@ const DEFAULT_MODEL: Record<string, string> = {
 };
 const VALID_PROVIDERS = ['anthropic', 'openai', 'google'];
 
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
-}
-
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
-  if (req.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
+  const early = preflight(req);
+  if (early) return early;
+
+  let caller: Caller;
+  try {
+    caller = await getCaller(req);
+    requirePermission(caller, 'config.manage_channels');
+  } catch (err) {
+    return handleError(err);
+  }
 
   let body: {
     // Modo OAuth (Embedded Signup)
@@ -127,13 +116,16 @@ Deno.serve(async (req: Request) => {
   // Upsert por meta_phone_number_id (evita duplicados si el usuario vuelve a conectar)
   const { data: existing } = await supabase
     .from('vendors')
-    .select('id')
+    .select('id, organization_id')
     .eq('meta_phone_number_id', phone_number_id)
     .single();
 
   let vendorId: string;
 
   if (existing) {
+    if (existing.organization_id && existing.organization_id !== caller.organizationId) {
+      return json({ error: 'Ese número de WhatsApp ya está conectado en otra empresa' }, 409);
+    }
     // Actualizar token (puede haber rotado)
     await supabase
       .from('vendors')
@@ -141,6 +133,7 @@ Deno.serve(async (req: Request) => {
         meta_access_token: accessToken,
         meta_waba_id:      waba_id,
         meta_verified:     true,
+        organization_id:   caller.organizationId,
         ...(system_prompt ? { system_prompt } : {}),
       })
       .eq('id', existing.id);
@@ -150,6 +143,7 @@ Deno.serve(async (req: Request) => {
       .from('vendors')
       .insert({
         name:                 displayName,
+        organization_id:      caller.organizationId,
         channel_type:         'meta',
         meta_phone_number_id: phone_number_id,
         meta_waba_id:         waba_id,
@@ -165,7 +159,12 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (error || !created) {
-      return json({ error: error?.message ?? 'Error creando vendor' }, 500);
+      const msg = error?.message ?? 'Error creando vendor';
+      const limit = msg.match(/LIMITE_CANALES:(\d+)/);
+      if (limit) {
+        return json({ error: `Tu empresa alcanzó el límite de ${limit[1]} canales de WhatsApp` }, 409);
+      }
+      return json({ error: msg }, 500);
     }
     vendorId = created.id;
   }

@@ -29,7 +29,63 @@ const AGENT_STATUS_ORDER = ['listo', 'atendiendo', 'pausa', 'fuera_de_atencion',
 // Estados que un vendedor puede elegirse a sí mismo desde el selector rápido
 // del topbar (los otros dos los pone el sistema: inactividad y difusiones).
 const MANUAL_STATUS_ORDER = ['listo', 'atendiendo', 'pausa', 'fuera_de_atencion'];
-const MY_AGENT_STORAGE_KEY = 'wtp_my_agent_id';
+
+// ── Login por teléfono (vendedores) ──────────────────────────────────────────
+// Espejo exacto de supabase/functions/_shared/phone.ts: el vendedor se crea en
+// Auth con un correo sintético derivado de su número E.164, y aquí se deriva
+// el mismo correo para iniciar sesión (sin SMS). Cualquier cambio va en ambos.
+const VENDOR_LOGIN_DOMAIN = 'vendedor.invalid';
+const E164_RE = /^\+[1-9][0-9]{6,14}$/;
+
+function normalizePhone(dial, number) {
+  const cc = String(dial ?? '').replace(/\D/g, '');
+  const n = String(number ?? '').replace(/\D/g, '').replace(/^0+/, '');
+  if (!cc || !n) return null;
+  const e164 = `+${cc}${n}`;
+  return E164_RE.test(e164) ? e164 : null;
+}
+
+function vendorLoginEmail(e164) {
+  return `${e164.replace(/\D/g, '')}@${VENDOR_LOGIN_DOMAIN}`;
+}
+
+const COUNTRY_CODES = [
+  { iso: 'PE', name: 'Perú', dial: '51' },
+  { iso: 'MX', name: 'México', dial: '52' },
+  { iso: 'CO', name: 'Colombia', dial: '57' },
+  { iso: 'AR', name: 'Argentina', dial: '54' },
+  { iso: 'CL', name: 'Chile', dial: '56' },
+  { iso: 'EC', name: 'Ecuador', dial: '593' },
+  { iso: 'BO', name: 'Bolivia', dial: '591' },
+  { iso: 'VE', name: 'Venezuela', dial: '58' },
+  { iso: 'UY', name: 'Uruguay', dial: '598' },
+  { iso: 'PY', name: 'Paraguay', dial: '595' },
+  { iso: 'BR', name: 'Brasil', dial: '55' },
+  { iso: 'PA', name: 'Panamá', dial: '507' },
+  { iso: 'CR', name: 'Costa Rica', dial: '506' },
+  { iso: 'GT', name: 'Guatemala', dial: '502' },
+  { iso: 'SV', name: 'El Salvador', dial: '503' },
+  { iso: 'HN', name: 'Honduras', dial: '504' },
+  { iso: 'NI', name: 'Nicaragua', dial: '505' },
+  { iso: 'DO', name: 'Rep. Dominicana', dial: '1' },
+  { iso: 'PR', name: 'Puerto Rico', dial: '1' },
+  { iso: 'CU', name: 'Cuba', dial: '53' },
+  { iso: 'US', name: 'Estados Unidos', dial: '1' },
+  { iso: 'CA', name: 'Canadá', dial: '1' },
+  { iso: 'ES', name: 'España', dial: '34' },
+  { iso: 'PT', name: 'Portugal', dial: '351' },
+  { iso: 'IT', name: 'Italia', dial: '39' },
+  { iso: 'FR', name: 'Francia', dial: '33' },
+  { iso: 'DE', name: 'Alemania', dial: '49' },
+  { iso: 'GB', name: 'Reino Unido', dial: '44' },
+];
+
+const flagEmoji = (iso) => String.fromCodePoint(...[...iso].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+
+function fillDialSelects() {
+  const options = COUNTRY_CODES.map((c) => `<option value="${c.dial}" ${c.iso === 'PE' ? 'selected' : ''}>${flagEmoji(c.iso)} ${c.name} +${c.dial}</option>`).join('');
+  document.querySelectorAll('#login-dial, #agent-dial').forEach((sel) => (sel.innerHTML = options));
+}
 
 // ── Roles y permisos ─────────────────────────────────────────────────────────
 // Solo define los permisos disponibles y cómo se agrupan en la UI de
@@ -172,8 +228,12 @@ const state = {
   section: 'canales-lista',
   vendors: [],
   agents: [],
-  currentUser: { name: 'Mi cuenta', email: 'Pendiente de login' }, // placeholder hasta conectar auth real
-  myAgentId: localStorage.getItem(MY_AGENT_STORAGE_KEY) || null, // "quién soy" para el selector de estado del topbar, hasta que haya login real
+  me: null, // sesión: { user, profile, organization, agent, isAdmin, isSuperAdmin, permissions }
+  loginModeAttempt: null, // 'empresa' | 'vendedor' — pestaña con la que se intentó entrar
+  profiles: [], // usuarios (profiles) visibles: los de mi empresa, o todos si soy super-admin
+  organizations: [], // solo super-admin (sección Empresas)
+  expandedOrgIds: new Set(),
+  agentModalOrgId: null, // super-admin creando un usuario en otra empresa
   configTab: 'vendedores',
   roles: [],
   expandedRoleIds: new Set(),
@@ -607,8 +667,18 @@ const colorFor = (id) => {
 
 // ── Navegación (sidebar) ──────────────────────────────────────────────────────
 
+// Canales que el usuario puede abrir: admin → todos los de su empresa;
+// vendedor → solo los que tiene asignados (los leads prestados le llegan por
+// Bandeja Global).
+function visibleVendors() {
+  if (!state.me) return [];
+  if (state.me.isAdmin) return state.vendors;
+  const agentId = state.me.agent?.id;
+  return agentId ? state.vendors.filter((v) => v.assigned_agent_id === agentId) : [];
+}
+
 function renderSidenavVendors() {
-  sidenavVendorsEl.innerHTML = state.vendors
+  sidenavVendorsEl.innerHTML = (can('leads.view') ? visibleVendors() : [])
     .map(
       (v) =>
         `<button class="sidenav-subitem" data-section="vendor:${v.id}" type="button" title="${escapeHtml(v.name)}">${escapeHtml(v.name)}</button>`
@@ -626,7 +696,35 @@ function syncSidenavActive() {
   });
 }
 
+// Permiso mínimo para entrar a cada sección (el servidor lo hace cumplir de
+// todos modos vía RLS; esto solo evita mostrar pantallas vacías).
+const SECTION_PERMS = {
+  dashboard: ['analytics.dashboard'],
+  'canales-lista': ['config.manage_channels'],
+  leads: ['leads.view'],
+  'bandeja-global': ['leads.view'],
+  productos: ['config.products'],
+  'catalogo-ia': ['config.products'],
+  automatizacion: ['messaging.manage_automations'],
+  configuracion: ['users.manage_users', 'users.manage_roles'],
+};
+
+function sectionAllowed(section) {
+  if (section === 'empresas') return Boolean(state.me?.isSuperAdmin);
+  if (section.startsWith('vendor:')) {
+    const id = section.slice('vendor:'.length);
+    return can('leads.view') && visibleVendors().some((v) => v.id === id);
+  }
+  const perms = SECTION_PERMS[section];
+  return !perms || perms.some(can);
+}
+
+function defaultSection() {
+  return ['canales-lista', 'bandeja-global', 'leads', 'dashboard', 'productos', 'automatizacion'].find(sectionAllowed) || 'disponibilidad';
+}
+
 async function setSection(section) {
+  if (!sectionAllowed(section)) section = defaultSection();
   state.section = section;
   syncSidenavActive();
 
@@ -640,6 +738,7 @@ async function setSection(section) {
   const isAutomatizacion = section === 'automatizacion';
   const isDisponibilidad = section === 'disponibilidad';
   const isConfiguracion = section === 'configuracion';
+  const isEmpresas = section === 'empresas';
   const isPlaceholder =
     !isCanales &&
     !isLeads &&
@@ -650,7 +749,8 @@ async function setSection(section) {
     !isCatalogo &&
     !isAutomatizacion &&
     !isDisponibilidad &&
-    !isConfiguracion;
+    !isConfiguracion &&
+    !isEmpresas;
 
   viewDashboard.hidden = !isDashboard;
   viewCanales.hidden = !isCanales;
@@ -662,6 +762,7 @@ async function setSection(section) {
   viewAutomatizacion.hidden = !isAutomatizacion;
   viewDisponibilidad.hidden = !isDisponibilidad;
   viewConfiguracion.hidden = !isConfiguracion;
+  viewEmpresas.hidden = !isEmpresas;
   viewPlaceholder.hidden = !isPlaceholder;
   document.querySelector('[data-section-group="canales"]').hidden = !isCanales;
   document.querySelector('[data-section-group="leads"]').hidden = !isLeads;
@@ -689,10 +790,13 @@ async function setSection(section) {
     await loadAvailability();
   } else if (isConfiguracion) {
     topbarTitle.textContent = 'Configuración';
-    setConfigTab(state.configTab);
+    setConfigTab(can('users.manage_users') ? state.configTab : 'roles');
+    await Promise.all([loadRoles(), loadProfiles()]);
     renderConfigVendedores();
-    await loadRoles();
     renderRolesTable();
+  } else if (isEmpresas) {
+    topbarTitle.textContent = 'Empresas';
+    await Promise.all([loadProfiles(), loadOrganizations()]);
   } else if (section === 'bandeja-global') {
     topbarTitle.textContent = 'Bandeja Global';
     state.inboxVendorLock = null;
@@ -720,27 +824,58 @@ sidenavEl.addEventListener('click', (ev) => {
 
 // ── Carga de datos ───────────────────────────────────────────────────────────
 
+// Sin ai_api_key ni meta_access_token: el cliente no necesita los secretos
+// (y el lockdown revoca su lectura). ai_key_set dice si hay clave.
+const VENDOR_COLUMNS =
+  'id, name, phone_number, channel_type, evolution_instance_id, meta_phone_number_id, meta_waba_id, meta_verified, ' +
+  'ai_provider, ai_model, ai_key_set, system_prompt, assigned_agent_id, keywords, organization_id, created_at, updated_at';
+
 async function loadVendors() {
-  const { data, error } = await supabase.from('vendors').select('*').order('created_at', { ascending: true });
+  const { data, error } = await supabase.from('vendors').select(VENDOR_COLUMNS).order('created_at', { ascending: true });
   if (error) {
     console.error('Error cargando vendors:', error.message);
     return;
   }
   state.vendors = data ?? [];
 
-  vendorSelect.innerHTML = state.vendors
+  const mine = visibleVendors();
+  vendorSelect.innerHTML = mine
     .map((v) => `<option value="${v.id}">${escapeHtml(v.name)} · ${v.channel_type}</option>`)
     .join('');
-  if (state.vendors.length && !state.vendorId) {
-    state.vendorId = state.vendors[0].id;
+  if (state.vendorId && !mine.some((v) => v.id === state.vendorId)) state.vendorId = null;
+  if (mine.length && !state.vendorId) {
+    state.vendorId = mine[0].id;
   }
   if (state.vendorId) vendorSelect.value = state.vendorId;
 
   renderCanalesFilter();
 
   renderVendorCards();
+  renderChannelLimit();
   renderSidenavVendors();
   renderCatalogVendorOptions();
+}
+
+function renderChannelLimit() {
+  const label = document.getElementById('channel-limit-label');
+  const btn = document.getElementById('create-vendor-btn');
+  const max = state.me?.organization?.max_channels;
+  if (max === undefined || max === null) {
+    label.textContent = '';
+    btn.disabled = false;
+    return;
+  }
+  const used = state.vendors.length;
+  label.textContent = `${used} de ${max} canales`;
+  const full = used >= max;
+  btn.disabled = full;
+  btn.title = full ? 'Tu empresa alcanzó su límite de canales. Pide al administrador de la plataforma ampliarlo.' : '';
+}
+
+function friendlyDbError(message) {
+  const limit = String(message ?? '').match(/LIMITE_CANALES:(\d+)/);
+  if (limit) return `Tu empresa alcanzó el límite de ${limit[1]} canales de WhatsApp. Pide al administrador de la plataforma ampliarlo.`;
+  return message;
 }
 
 async function loadAgents() {
@@ -755,12 +890,21 @@ async function loadAgents() {
   document.getElementById('m-agent').innerHTML = '<option value="">Vendedor del canal</option>' + agentOptions;
   ciAgent.innerHTML = '<option value="">Vendedor del canal</option>' + agentOptions;
   renderVendedoresFilter();
-
-  if (state.myAgentId && !state.agents.some((a) => a.id === state.myAgentId)) {
-    state.myAgentId = null;
-    localStorage.removeItem(MY_AGENT_STORAGE_KEY);
-  }
   renderStatusPill();
+}
+
+// Usuarios con login. RLS: un admin ve los de su empresa; el super-admin, todos.
+async function loadProfiles() {
+  if (!state.me?.isSuperAdmin && !can('users.manage_users')) {
+    state.profiles = [];
+    return;
+  }
+  const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: true });
+  if (error) {
+    console.error('Error cargando profiles:', error.message);
+    return;
+  }
+  state.profiles = data ?? [];
 }
 
 // Campos personalizados: definición global (compartida en todos los canales y
@@ -936,7 +1080,7 @@ async function generateProductCatalog(ev) {
   try {
     const resp = await fetch(`${FUNCTIONS_URL}/product-autocomplete`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}`, apikey: SUPABASE_ANON_KEY },
+      headers: await authHeaders(),
       body: JSON.stringify({ description, count }),
     });
     const json = await resp.json();
@@ -1189,7 +1333,7 @@ async function analyzeCatalogPrompt(ev) {
   try {
     const resp = await fetch(`${FUNCTIONS_URL}/catalog-analyze-prompt`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}`, apikey: SUPABASE_ANON_KEY },
+      headers: await authHeaders(),
       body: JSON.stringify({ prompt }),
     });
     const json = await resp.json();
@@ -1998,7 +2142,7 @@ function renderAvailPreview() {
 }
 
 async function loadAvailConfig() {
-  const { data, error } = await supabase.from('availability_settings').select('*').eq('id', 'default').maybeSingle();
+  const { data, error } = await supabase.from('availability_settings').select('*').eq('organization_id', state.me.organization.id).maybeSingle();
   if (error) console.error('Error cargando availability_settings:', error.message);
 
   state.availSettings = data ?? {
@@ -2029,7 +2173,7 @@ availSmartToggle?.addEventListener('change', async () => {
   const { error } = await supabase
     .from('availability_settings')
     .update({ smart_assignment_enabled: availSmartToggle.checked })
-    .eq('id', 'default');
+    .eq('organization_id', state.me.organization.id);
   if (error) alert(`Error al guardar: ${error.message}`);
 });
 
@@ -2045,7 +2189,7 @@ availConfigSaveBtn?.addEventListener('click', async () => {
       alert_etapas: state.availAlertEtapas,
       alert_minutes: minutes,
     })
-    .eq('id', 'default');
+    .eq('organization_id', state.me.organization.id);
   if (error) {
     availConfigStatus.textContent = `Error: ${error.message}`;
     availConfigStatus.className = 'settings-status err';
@@ -2787,9 +2931,11 @@ function renderVendorCards() {
   vendorCardsEl.innerHTML = state.vendors
     .map((v) => {
       const connected = v.channel_type === 'meta' ? v.meta_verified : Boolean(v.evolution_instance_id);
-      const iaActiva = Boolean(v.ai_api_key);
+      const iaActiva = Boolean(v.ai_key_set);
       const agent = state.agents.find((a) => a.id === v.assigned_agent_id);
       const keywords = v.keywords ?? [];
+      const canManage = can('config.manage_channels');
+      const canAi = can('config.ai_settings');
 
       return `
       <div class="vendor-card" data-id="${v.id}">
@@ -2799,7 +2945,7 @@ function renderVendorCards() {
             <span class="status-pill ${iaActiva ? 'is-on' : ''}">${iaActiva ? '⚡ IA Activa' : 'IA sin configurar'}</span>
           </div>
           <div class="vendor-card-icons">
-            <button class="btn-icon js-delete-vendor" type="button" title="Eliminar canal" aria-label="Eliminar canal">🗑</button>
+            ${canManage ? '<button class="btn-icon js-delete-vendor" type="button" title="Eliminar canal" aria-label="Eliminar canal">🗑</button>' : ''}
           </div>
         </div>
 
@@ -2811,7 +2957,7 @@ function renderVendorCards() {
           </div>
         </div>
 
-        <button type="button" class="vendor-assigned js-open-assign">
+        <button type="button" class="vendor-assigned ${canManage ? 'js-open-assign' : ''}" ${canManage ? '' : 'disabled'}>
           👤 ${agent ? `Asignado a <strong>${escapeHtml(agent.name)}</strong>` : 'Sin asignar'}
         </button>
 
@@ -2828,12 +2974,12 @@ function renderVendorCards() {
         </div>
 
         <div class="vendor-actions">
-          <button type="button" class="btn js-open-settings">⚙ Configurar</button>
+          ${canAi ? '<button type="button" class="btn js-open-settings">⚙ Configurar</button>' : ''}
           <button type="button" class="btn" disabled title="Próximamente">📊 Pixel</button>
           <button type="button" class="btn" disabled title="Próximamente">📋 Formularios</button>
-          <button type="button" class="btn js-open-assign">👤 Asignar</button>
+          ${canManage ? '<button type="button" class="btn js-open-assign">👤 Asignar</button>' : ''}
           <button type="button" class="btn" disabled title="Próximamente">⬆ Importar</button>
-          <button type="button" class="btn btn-danger js-delete-vendor">🗑 Eliminar</button>
+          ${canManage ? '<button type="button" class="btn btn-danger js-delete-vendor">🗑 Eliminar</button>' : ''}
         </div>
       </div>`;
     })
@@ -3684,7 +3830,7 @@ function subscribeChannelThread(prospectId) {
 async function callSendMessage(payload) {
   const resp = await fetch(`${FUNCTIONS_URL}/send-message`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON_KEY}`, apikey: SUPABASE_ANON_KEY },
+    headers: await authHeaders(),
     body: JSON.stringify(payload),
   });
   const json = await resp.json();
@@ -3785,7 +3931,8 @@ async function uploadAndSendMedia(file, mediaType, caption = '') {
   setComposerStatus(`Subiendo ${file.name}…`);
   try {
     const ext = file.name.includes('.') ? file.name.split('.').pop() : mediaType;
-    const path = `${prospectId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    // Prefijo de empresa: la política de subida solo permite la propia.
+    const path = `${state.me.organization.id}/${prospectId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const { error: uploadError } = await supabase.storage.from('chat-media').upload(path, file, { contentType: file.type || undefined });
     if (uploadError) throw new Error(`No se pudo subir el archivo: ${uploadError.message}`);
 
@@ -4037,11 +4184,7 @@ async function saveSettings(ev) {
   try {
     const resp = await fetch(`${FUNCTIONS_URL}/update-vendor-ai`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        apikey: SUPABASE_ANON_KEY,
-      },
+      headers: await authHeaders(),
       body: JSON.stringify(payload),
     });
     const json = await resp.json();
@@ -4092,7 +4235,7 @@ async function createVendorEvolution(fd, name) {
     ...readAiConfig(fd),
   });
 
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(friendlyDbError(error.message));
 }
 
 async function createVendorMeta(fd, name) {
@@ -4107,11 +4250,7 @@ async function createVendorMeta(fd, name) {
 
   const resp = await fetch(`${FUNCTIONS_URL}/meta-exchange`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      apikey: SUPABASE_ANON_KEY,
-    },
+    headers: await authHeaders(),
     body: JSON.stringify({
       access_token,
       phone_number_id,
@@ -4164,54 +4303,104 @@ async function createVendor(ev) {
   setTimeout(() => (vendorOverlay.hidden = true), 600);
 }
 
-// ── Crear vendedor (agente) ──────────────────────────────────────────────────
+// ── Usuarios de la empresa (vendedores con login por teléfono / admins) ──────
+// Toda la administración de usuarios pasa por la Edge Function admin-users
+// (crea el usuario de Auth, su perfil y —para vendedores— su fila en agents).
 
-function openAgentModal() {
+const agentUserType = document.getElementById('agent-user-type');
+const agentVendedorFields = document.getElementById('agent-vendedor-fields');
+const agentAdminFields = document.getElementById('agent-admin-fields');
+const agentRoleSelect = document.getElementById('agent-role-select');
+const agentModalOrg = document.getElementById('agent-modal-org');
+
+function syncAgentModalType() {
+  const isAdmin = agentUserType.value === 'admin';
+  agentVendedorFields.hidden = isAdmin;
+  agentAdminFields.hidden = !isAdmin;
+}
+agentUserType.addEventListener('change', syncAgentModalType);
+
+function openAgentModal(orgId = null) {
+  state.agentModalOrgId = orgId;
   agentForm.reset();
+  agentUserType.value = 'vendedor';
+  syncAgentModalType();
+
+  // Los roles de otra empresa no son visibles (RLS): admin-users asigna el
+  // rol "Vendedores" de esa empresa por defecto.
+  const foreignOrg = orgId && orgId !== state.me.organization.id;
+  agentRoleSelect.innerHTML = foreignOrg
+    ? '<option value="">Vendedores (por defecto)</option>'
+    : state.roles
+        .filter((r) => !r.is_system)
+        .map((r) => `<option value="${r.id}" ${r.name === 'Vendedores' ? 'selected' : ''}>${escapeHtml(r.name)}</option>`)
+        .join('') || '<option value="">Vendedores (por defecto)</option>';
+
+  const org = foreignOrg ? state.organizations.find((o) => o.id === orgId) : null;
+  agentModalOrg.hidden = !org;
+  agentModalOrg.textContent = org ? `Empresa: ${org.name}` : '';
+
   agentStatus.textContent = '';
+  agentStatus.className = 'settings-status';
   agentOverlay.hidden = false;
 }
 
 async function createAgent(ev) {
   ev.preventDefault();
   const fd = new FormData(agentForm);
-  const firstName = fd.get('first_name')?.toString().trim();
-  const lastName = fd.get('last_name')?.toString().trim();
-  const name = [firstName, lastName].filter(Boolean).join(' ');
-  if (!name) {
-    agentStatus.textContent = 'El nombre es obligatorio.';
+  const setErr = (msg) => {
+    agentStatus.textContent = msg;
     agentStatus.className = 'settings-status err';
-    return;
+  };
+
+  const userType = fd.get('user_type');
+  const fullName = [fd.get('first_name'), fd.get('last_name')]
+    .map((s) => String(s ?? '').trim())
+    .filter(Boolean)
+    .join(' ');
+  const password = String(fd.get('password') ?? '');
+  if (!fullName) return setErr('El nombre es obligatorio.');
+  if (password.length < 6) return setErr('La contraseña debe tener al menos 6 caracteres.');
+
+  const payload = { user_type: userType, full_name: fullName, password };
+  if (state.agentModalOrgId) payload.organization_id = state.agentModalOrgId;
+
+  if (userType === 'admin') {
+    const email = String(fd.get('admin_email') ?? '').trim().toLowerCase();
+    if (!email) return setErr('El correo es obligatorio para un administrador.');
+    payload.email = email;
+  } else {
+    const e164 = normalizePhone(fd.get('dial'), fd.get('phone'));
+    if (!e164) return setErr('Número de WhatsApp inválido: elige el país y escribe el número sin el código.');
+    payload.phone = e164;
+    const email = String(fd.get('email') ?? '').trim().toLowerCase();
+    if (email) payload.email = email;
+    const roleId = String(fd.get('role_id') ?? '');
+    if (roleId) payload.role_id = roleId;
+    const expires = String(fd.get('access_expires_at') ?? '').trim();
+    if (expires) payload.access_expires_at = expires;
   }
 
   agentStatus.textContent = 'Creando…';
   agentStatus.className = 'settings-status';
 
-  // La contraseña no se guarda: esta tabla es legible con la anon key (sin
-  // capa de auth todavía), así que no hay dónde ponerla de forma segura.
-  // Se activará cuando el vendedor pueda iniciar sesión de verdad.
-  const { error } = await supabase.from('agents').insert({
-    name,
-    email: fd.get('email')?.toString().trim() || null,
-    phone: fd.get('phone')?.toString().trim() || null,
-    access_expires_at: fd.get('access_expires_at')?.toString().trim() || null,
-  });
-
-  if (error) {
-    agentStatus.textContent = `Error: ${error.message}`;
-    agentStatus.className = 'settings-status err';
-    return;
+  try {
+    await callAdminUsers('create_user', payload);
+  } catch (err) {
+    return setErr(`Error: ${err.message}`);
   }
 
-  agentStatus.textContent = 'Vendedor creado ✓';
+  agentStatus.textContent = 'Usuario creado ✓';
   agentStatus.className = 'settings-status ok';
-  await loadAgents();
+  await Promise.all([loadAgents(), loadProfiles()]);
   renderVendorCards();
   renderConfigVendedores();
+  if (state.agentModalOrgId) await loadOrganizations();
   agentForm.reset();
   setTimeout(() => (agentOverlay.hidden = true), 600);
 }
 
+// Vendedor sin login (fila de agents sin perfil): se borra directo.
 async function deleteAgent(agentId) {
   const agent = state.agents.find((a) => a.id === agentId);
   if (!agent) return;
@@ -4227,36 +4416,288 @@ async function deleteAgent(agentId) {
   renderConfigVendedores();
 }
 
-function renderConfigVendedores() {
-  if (!state.agents.length) {
-    configVendorsTbody.innerHTML = `<tr class="empty-row"><td colspan="5">No hay vendedores registrados todavía.</td></tr>`;
+async function refreshUsersViews() {
+  await Promise.all([loadAgents(), loadProfiles()]);
+  renderVendorCards();
+  renderConfigVendedores();
+  if (state.me?.isSuperAdmin && state.section === 'empresas') await loadOrganizations();
+}
+
+async function deleteUser(profile) {
+  const label = profile.full_name || profile.email;
+  if (!confirm(`¿Eliminar el usuario de ${label}? Ya no podrá iniciar sesión.`)) return;
+  try {
+    await callAdminUsers('delete_user', { user_id: profile.id, delete_agent: true });
+  } catch (err) {
+    alert(`No se pudo eliminar: ${err.message}`);
     return;
   }
+  await refreshUsersViews();
+}
 
-  configVendorsTbody.innerHTML = state.agents
-    .map((a) => {
+async function resetUserPassword(profile) {
+  const pwd = prompt(`Nueva contraseña para ${profile.full_name || profile.email} (mínimo 6 caracteres):`);
+  if (pwd === null) return;
+  if (pwd.length < 6) {
+    alert('La contraseña debe tener al menos 6 caracteres.');
+    return;
+  }
+  try {
+    await callAdminUsers('reset_password', { user_id: profile.id, new_password: pwd });
+    alert('Contraseña actualizada ✓');
+  } catch (err) {
+    alert(`No se pudo cambiar la contraseña: ${err.message}`);
+  }
+}
+
+async function toggleUserActive(profile) {
+  const next = !profile.is_active;
+  if (!next && !confirm(`¿Desactivar a ${profile.full_name || profile.email}? Perderá el acceso de inmediato.`)) return;
+  try {
+    await callAdminUsers('set_active', { user_id: profile.id, is_active: next });
+  } catch (err) {
+    alert(`No se pudo cambiar el estado: ${err.message}`);
+    return;
+  }
+  await refreshUsersViews();
+}
+
+function userActionButtons(profile) {
+  const isSelf = profile.id === state.me.user.id;
+  if (isSelf || (profile.is_super_admin && !state.me.isSuperAdmin)) return '';
+  return `
+    <button type="button" class="btn-icon js-user-reset" data-user-id="${profile.id}" title="Cambiar contraseña" aria-label="Cambiar contraseña">🔑</button>
+    <button type="button" class="btn-icon js-user-toggle" data-user-id="${profile.id}" title="${profile.is_active ? 'Desactivar' : 'Activar'}" aria-label="${profile.is_active ? 'Desactivar' : 'Activar'}">${profile.is_active ? '⏸' : '▶️'}</button>
+    <button type="button" class="btn-icon js-user-delete" data-user-id="${profile.id}" title="Eliminar" aria-label="Eliminar">🗑</button>
+  `;
+}
+
+function handleUserActionClick(ev) {
+  const btn = ev.target.closest('.js-user-reset, .js-user-toggle, .js-user-delete');
+  if (!btn) return false;
+  const profile = state.profiles.find((p) => p.id === btn.dataset.userId);
+  if (!profile) return true;
+  if (btn.classList.contains('js-user-reset')) resetUserPassword(profile);
+  else if (btn.classList.contains('js-user-toggle')) toggleUserActive(profile);
+  else deleteUser(profile);
+  return true;
+}
+
+function renderConfigVendedores() {
+  const orgId = state.me.organization.id;
+  const profiles = state.profiles.filter((p) => p.organization_id === orgId);
+  const roleName = (agent) => (agent?.role_id ? state.roles.find((r) => r.id === agent.role_id)?.name : null) || 'Sin rol';
+
+  const rows = profiles.map((p) => {
+    const agent = p.agent_id ? state.agents.find((a) => a.id === p.agent_id) : null;
+    const isVendedor = p.user_type === 'vendedor';
+    const name = p.full_name || agent?.name || p.email;
+    const expired = agent?.access_expires_at && agent.access_expires_at < new Date().toISOString().slice(0, 10);
+    const access = !p.is_active
+      ? '<span class="role-badge role-badge-off">Desactivado</span>'
+      : expired
+        ? '<span class="role-badge role-badge-off">Vencido</span>'
+        : agent?.access_expires_at
+          ? `<span class="role-badge role-badge-ok">Hasta ${escapeHtml(agent.access_expires_at)}</span>`
+          : '<span class="role-badge role-badge-ok">Activo</span>';
+    return `
+      <tr data-id="${p.id}">
+        <td>
+          <div class="config-vendor-cell">
+            <span class="account-avatar">${initials(name)}</span>
+            <span>${escapeHtml(name)}${p.is_super_admin ? ' <span class="role-badge role-badge-info">Plataforma</span>' : ''}</span>
+          </div>
+        </td>
+        <td>${isVendedor ? `📱 ${escapeHtml(p.phone) || '—'}` : `✉️ ${escapeHtml(p.email)}`}</td>
+        <td>${escapeHtml(isVendedor ? agent?.email : p.email) || '—'}</td>
+        <td><span class="role-badge ${isVendedor ? '' : 'role-badge-full'}">${isVendedor ? escapeHtml(roleName(agent)) : 'Administrador'}</span></td>
+        <td>${access}</td>
+        <td>${userActionButtons(p)}</td>
+      </tr>
+    `;
+  });
+
+  // Vendedores creados sin login (antes del SaaS): se pueden vincular creando
+  // su usuario, o eliminar.
+  for (const a of state.agents) {
+    if (profiles.some((p) => p.agent_id === a.id)) continue;
+    rows.push(`
+      <tr data-id="${a.id}">
+        <td>
+          <div class="config-vendor-cell">
+            <span class="account-avatar">${initials(a.name)}</span>
+            <span>${escapeHtml(a.name)}</span>
+          </div>
+        </td>
+        <td><span class="muted">Sin usuario</span></td>
+        <td>${escapeHtml(a.email) || '—'}</td>
+        <td><span class="role-badge">${escapeHtml(roleName(a))}</span></td>
+        <td><span class="muted">—</span></td>
+        <td><button type="button" class="btn-icon config-delete-agent-btn" data-id="${a.id}" title="Eliminar" aria-label="Eliminar">🗑</button></td>
+      </tr>
+    `);
+  }
+
+  configVendorsTbody.innerHTML = rows.join('') || `<tr class="empty-row"><td colspan="6">No hay usuarios todavía. Crea el primero con “＋ Nuevo usuario”.</td></tr>`;
+}
+
+configVendorsTbody.addEventListener('click', (ev) => {
+  if (handleUserActionClick(ev)) return;
+  const btn = ev.target.closest('.config-delete-agent-btn');
+  if (!btn) return;
+  deleteAgent(btn.dataset.id);
+});
+
+// ── Empresas (solo super-admin) ──────────────────────────────────────────────
+
+const viewEmpresas = document.getElementById('view-empresas');
+const orgsTbody = document.getElementById('orgs-tbody');
+const orgOverlay = document.getElementById('org-overlay');
+const orgForm = document.getElementById('org-form');
+const orgStatus = document.getElementById('org-status');
+
+async function loadOrganizations() {
+  try {
+    const json = await callAdminUsers('list_organizations');
+    state.organizations = json.organizations ?? [];
+  } catch (err) {
+    orgsTbody.innerHTML = `<tr class="empty-row"><td colspan="6">Error cargando empresas: ${escapeHtml(err.message)}</td></tr>`;
+    return;
+  }
+  renderOrgsTable();
+}
+
+function renderOrgsTable() {
+  if (!state.organizations.length) {
+    orgsTbody.innerHTML = `<tr class="empty-row"><td colspan="6">No hay empresas todavía.</td></tr>`;
+    return;
+  }
+  orgsTbody.innerHTML = state.organizations
+    .map((o) => {
+      const isMine = o.id === state.me.organization.id;
+      const expanded = state.expandedOrgIds.has(o.id);
+      const users = state.profiles.filter((p) => p.organization_id === o.id);
+      const usersRow = expanded
+        ? `<tr class="org-users-row"><td colspan="6"><div class="org-users">${
+            users
+              .map(
+                (p) => `
+                  <div class="org-user">
+                    <span class="account-avatar">${initials(p.full_name || p.email)}</span>
+                    <span><strong>${escapeHtml(p.full_name || p.email)}</strong> <span class="muted">· ${p.user_type === 'vendedor' ? `📱 ${escapeHtml(p.phone) || '—'}` : `✉️ ${escapeHtml(p.email)}`} · ${p.user_type === 'admin' ? 'Administrador' : 'Vendedor'}${p.is_active ? '' : ' · <em>desactivado</em>'}</span></span>
+                    <span class="org-user-actions">${userActionButtons(p)}</span>
+                  </div>`
+              )
+              .join('') || '<span class="muted">Sin usuarios.</span>'
+          }</div></td></tr>`
+        : '';
       return `
-        <tr data-id="${a.id}">
+        <tr data-id="${o.id}">
+          <td><strong>${escapeHtml(o.name)}</strong>${isMine ? ' <span class="role-badge role-badge-info">Tu empresa</span>' : ''}</td>
+          <td>${o.channels_count} / ${o.max_channels}</td>
+          <td>${o.users_count}</td>
+          <td>${(o.admins ?? []).map((a) => escapeHtml(a.email)).join('<br>') || '—'}</td>
+          <td>${o.is_active ? '<span class="role-badge role-badge-ok">Activa</span>' : '<span class="role-badge role-badge-off">Desactivada</span>'}</td>
           <td>
-            <div class="config-vendor-cell">
-              <span class="account-avatar">${initials(a.name)}</span>
-              <span>${escapeHtml(a.name)}</span>
-            </div>
+            <button type="button" class="btn-icon js-org-limit" data-id="${o.id}" title="Cambiar límite de canales" aria-label="Cambiar límite de canales">🔢</button>
+            <button type="button" class="btn-icon js-org-add-user" data-id="${o.id}" title="Nuevo usuario" aria-label="Nuevo usuario">👤➕</button>
+            ${isMine ? '' : `<button type="button" class="btn-icon js-org-toggle" data-id="${o.id}" title="${o.is_active ? 'Desactivar' : 'Activar'}" aria-label="${o.is_active ? 'Desactivar' : 'Activar'}">${o.is_active ? '⏸' : '▶️'}</button>`}
+            <button type="button" class="btn-icon js-org-expand" data-id="${o.id}" aria-label="Ver usuarios">${expanded ? '▾' : '▸'}</button>
           </td>
-          <td>${escapeHtml(a.phone) || '—'}</td>
-          <td>${escapeHtml(a.email) || '—'}</td>
-          <td><span class="role-badge">Vendedores</span></td>
-          <td><button type="button" class="btn-icon config-delete-agent-btn" data-id="${a.id}" title="Eliminar" aria-label="Eliminar">🗑</button></td>
         </tr>
+        ${usersRow}
       `;
     })
     .join('');
 }
 
-configVendorsTbody.addEventListener('click', (ev) => {
-  const btn = ev.target.closest('.config-delete-agent-btn');
+orgsTbody.addEventListener('click', async (ev) => {
+  if (handleUserActionClick(ev)) return;
+  const btn = ev.target.closest('.js-org-limit, .js-org-add-user, .js-org-toggle, .js-org-expand');
   if (!btn) return;
-  deleteAgent(btn.dataset.id);
+  const org = state.organizations.find((o) => o.id === btn.dataset.id);
+  if (!org) return;
+
+  if (btn.classList.contains('js-org-expand')) {
+    if (state.expandedOrgIds.has(org.id)) state.expandedOrgIds.delete(org.id);
+    else state.expandedOrgIds.add(org.id);
+    renderOrgsTable();
+    return;
+  }
+  if (btn.classList.contains('js-org-add-user')) {
+    openAgentModal(org.id === state.me.organization.id ? null : org.id);
+    return;
+  }
+  if (btn.classList.contains('js-org-limit')) {
+    const raw = prompt(`Canales de WhatsApp permitidos para ${org.name}:`, String(org.max_channels));
+    if (raw === null) return;
+    const max = Number.parseInt(raw, 10);
+    if (!Number.isInteger(max) || max < 0) {
+      alert('Escribe un número entero mayor o igual a 0.');
+      return;
+    }
+    try {
+      await callAdminUsers('set_organization_limits', { organization_id: org.id, max_channels: max });
+    } catch (err) {
+      alert(`No se pudo cambiar el límite: ${err.message}`);
+      return;
+    }
+    await loadOrganizations();
+    if (org.id === state.me.organization.id) {
+      state.me.organization.max_channels = max;
+      renderChannelLimit();
+    }
+    return;
+  }
+  if (btn.classList.contains('js-org-toggle')) {
+    const next = !org.is_active;
+    if (!next && !confirm(`¿Desactivar la empresa ${org.name}? Ninguno de sus usuarios podrá entrar.`)) return;
+    try {
+      await callAdminUsers('set_organization_active', { organization_id: org.id, is_active: next });
+    } catch (err) {
+      alert(`No se pudo cambiar el estado: ${err.message}`);
+      return;
+    }
+    await loadOrganizations();
+  }
+});
+
+document.getElementById('create-org-btn').addEventListener('click', () => {
+  orgForm.reset();
+  orgStatus.textContent = '';
+  orgStatus.className = 'settings-status';
+  orgOverlay.hidden = false;
+});
+document.getElementById('org-modal-close').addEventListener('click', () => (orgOverlay.hidden = true));
+orgOverlay.addEventListener('click', (ev) => {
+  if (ev.target === orgOverlay) orgOverlay.hidden = true;
+});
+
+orgForm.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const fd = new FormData(orgForm);
+  const payload = {
+    name: String(fd.get('name') ?? '').trim(),
+    max_channels: Number.parseInt(String(fd.get('max_channels') ?? '1'), 10),
+    admin: {
+      email: String(fd.get('admin_email') ?? '').trim().toLowerCase(),
+      password: String(fd.get('admin_password') ?? ''),
+      full_name: String(fd.get('admin_full_name') ?? '').trim(),
+    },
+  };
+  orgStatus.textContent = 'Creando…';
+  orgStatus.className = 'settings-status';
+  try {
+    await callAdminUsers('create_organization', payload);
+  } catch (err) {
+    orgStatus.textContent = `Error: ${err.message}`;
+    orgStatus.className = 'settings-status err';
+    return;
+  }
+  orgStatus.textContent = 'Empresa creada ✓';
+  orgStatus.className = 'settings-status ok';
+  await Promise.all([loadProfiles(), loadOrganizations()]);
+  setTimeout(() => (orgOverlay.hidden = true), 600);
 });
 
 function setConfigTab(tab) {
@@ -4621,8 +5062,8 @@ vendorOverlay.addEventListener('click', (ev) => {
 vendorForm.addEventListener('submit', createVendor);
 vendorConnectionType.addEventListener('change', updateVendorFormConnectionType);
 
-document.getElementById('create-agent-btn').addEventListener('click', openAgentModal);
-document.getElementById('create-agent-btn-config').addEventListener('click', openAgentModal);
+document.getElementById('create-agent-btn').addEventListener('click', () => openAgentModal());
+document.getElementById('create-agent-btn-config').addEventListener('click', () => openAgentModal());
 document.getElementById('agent-modal-close').addEventListener('click', () => (agentOverlay.hidden = true));
 agentOverlay.addEventListener('click', (ev) => {
   if (ev.target === agentOverlay) agentOverlay.hidden = true;
@@ -4636,8 +5077,8 @@ assignOverlay.addEventListener('click', (ev) => {
 assignForm.addEventListener('submit', saveAssign);
 
 // ── Estado rápido del vendedor (selector en el topbar) ───────────────────────
-// Como el panel no tiene login todavía, "quién soy" se guarda en este
-// navegador (localStorage) en vez de venir de una sesión real.
+// "Quién soy" sale de la sesión (profiles.agent_id). Un admin sin fila de
+// vendedor no tiene selector.
 
 const statusPillWrap = document.getElementById('status-pill-wrap');
 const statusPillTrigger = document.getElementById('status-pill-trigger');
@@ -4646,16 +5087,14 @@ const statusPillLabel = document.getElementById('status-pill-label');
 const statusPillPanel = document.getElementById('status-pill-panel');
 
 function myAgent() {
-  return state.agents.find((a) => a.id === state.myAgentId) || null;
+  const id = state.me?.agent?.id;
+  return id ? state.agents.find((a) => a.id === id) || null : null;
 }
 
 function renderStatusPill() {
   const agent = myAgent();
-  if (!agent) {
-    statusPillDot.style.background = 'var(--text-dim)';
-    statusPillLabel.textContent = 'Elegir usuario';
-    return;
-  }
+  statusPillWrap.hidden = !agent;
+  if (!agent) return;
   const meta = AGENT_STATUS_META[agent.status] ?? AGENT_STATUS_META.fuera_de_atencion;
   statusPillDot.style.background = `var(--${meta.color})`;
   statusPillLabel.textContent = meta.label;
@@ -4663,26 +5102,7 @@ function renderStatusPill() {
 
 function renderStatusPanel() {
   const agent = myAgent();
-  if (!agent) {
-    statusPillPanel.innerHTML = `
-      <div class="status-menu-title">¿Quién eres?</div>
-      ${
-        state.agents.length
-          ? state.agents
-              .map(
-                (a) => `
-                <button type="button" class="status-menu-option" data-pick-agent="${a.id}">
-                  <span class="avatar" style="background:${colorFor(a.id)}">${initials(a.name)}</span>
-                  <span class="status-menu-text"><strong>${escapeHtml(a.name)}</strong></span>
-                </button>
-              `
-              )
-              .join('')
-          : `<p class="muted" style="padding:0 16px 14px;">No hay vendedores creados todavía.</p>`
-      }
-    `;
-    return;
-  }
+  if (!agent) return;
 
   statusPillPanel.innerHTML = `
     <div class="status-menu-title">Cambiar estado</div>
@@ -4700,7 +5120,6 @@ function renderStatusPanel() {
         </button>
       `;
     }).join('')}
-    <button type="button" class="status-menu-footer-link" id="status-menu-switch-user">${escapeHtml(agent.name)} · cambiar de usuario</button>
   `;
 }
 
@@ -4719,21 +5138,6 @@ statusPillTrigger.addEventListener('click', (ev) => {
 });
 
 statusPillPanel.addEventListener('click', async (ev) => {
-  const pick = ev.target.closest('[data-pick-agent]');
-  if (pick) {
-    state.myAgentId = pick.dataset.pickAgent;
-    localStorage.setItem(MY_AGENT_STORAGE_KEY, state.myAgentId);
-    renderStatusPill();
-    closeStatusPanel();
-    return;
-  }
-  if (ev.target.closest('#status-menu-switch-user')) {
-    state.myAgentId = null;
-    localStorage.removeItem(MY_AGENT_STORAGE_KEY);
-    renderStatusPill();
-    renderStatusPanel();
-    return;
-  }
   const setStatus = ev.target.closest('[data-set-status]');
   if (setStatus) {
     const agent = myAgent();
@@ -4748,21 +5152,201 @@ document.addEventListener('click', (ev) => {
   if (!statusPillPanel.hidden && !statusPillWrap.contains(ev.target)) closeStatusPanel();
 });
 
+// ── Sesión, permisos y login ─────────────────────────────────────────────────
+
+const shellEl = document.querySelector('.shell');
+const loginScreen = document.getElementById('login-screen');
+const loginForm = document.getElementById('login-form');
+const loginStatus = document.getElementById('login-status');
+const loginModesEl = document.getElementById('login-modes');
+const loginEmpresaFields = document.getElementById('login-empresa-fields');
+const loginVendedorFields = document.getElementById('login-vendedor-fields');
+const blockedScreen = document.getElementById('blocked-screen');
+let loginMode = 'empresa';
+
+function can(perm) {
+  const me = state.me;
+  if (!me) return false;
+  return me.isAdmin || me.permissions.has(perm);
+}
+
+// Oculta todo lo marcado con data-perm / data-perm-any que el usuario no
+// tenga. Los admins pasan todo.
+function applyPermissionGating() {
+  document.querySelectorAll('[data-perm]').forEach((el) => {
+    el.hidden = !can(el.dataset.perm);
+  });
+  document.querySelectorAll('[data-perm-any]').forEach((el) => {
+    el.hidden = !el.dataset.permAny.split(/\s+/).some(can);
+  });
+  document.getElementById('nav-empresas').hidden = !state.me?.isSuperAdmin;
+  const canalesSection = document.getElementById('sidenav-canales-section');
+  canalesSection.hidden = !canalesSection.querySelector('.sidenav-item:not([hidden])');
+}
+
+async function authHeaders() {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error('Tu sesión expiró. Vuelve a iniciar sesión.');
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY };
+}
+
+async function callAdminUsers(action, payload = {}) {
+  const resp = await fetch(`${FUNCTIONS_URL}/admin-users`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify({ action, ...payload }),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
+  return json;
+}
+
+function showScreen(which) {
+  loginScreen.hidden = which !== 'login';
+  blockedScreen.hidden = which !== 'blocked';
+  shellEl.hidden = which !== 'app';
+}
+
+function showBlocked(title, text) {
+  document.getElementById('blocked-title').textContent = title;
+  document.getElementById('blocked-text').textContent = text;
+  showScreen('blocked');
+}
+
+function setLoginStatus(text, isError = false) {
+  loginStatus.textContent = text;
+  loginStatus.className = `settings-status${isError ? ' err' : ''}`;
+}
+
+function setLoginMode(mode) {
+  loginMode = mode;
+  loginModesEl.querySelectorAll('.chip').forEach((c) => c.classList.toggle('is-active', c.dataset.loginMode === mode));
+  loginEmpresaFields.hidden = mode !== 'empresa';
+  loginVendedorFields.hidden = mode !== 'vendedor';
+  setLoginStatus('');
+}
+
+loginModesEl.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.chip[data-login-mode]');
+  if (btn) setLoginMode(btn.dataset.loginMode);
+});
+
+loginForm.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const fd = new FormData(loginForm);
+  const password = String(fd.get('password') ?? '');
+  let email;
+  if (loginMode === 'empresa') {
+    email = String(fd.get('email') ?? '').trim().toLowerCase();
+    if (!email) return setLoginStatus('Escribe tu correo.', true);
+  } else {
+    const e164 = normalizePhone(fd.get('dial'), fd.get('phone'));
+    if (!e164) return setLoginStatus('Número inválido: elige tu país y escribe el número sin el código.', true);
+    email = vendorLoginEmail(e164);
+  }
+  if (!password) return setLoginStatus('Escribe tu contraseña.', true);
+
+  setLoginStatus('Ingresando…');
+  state.loginModeAttempt = loginMode;
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error || !data.session) {
+    state.loginModeAttempt = null;
+    const msg = /invalid login credentials/i.test(error?.message ?? '')
+      ? loginMode === 'empresa'
+        ? 'Correo o contraseña incorrectos.'
+        : 'Número o contraseña incorrectos.'
+      : `No se pudo iniciar sesión: ${error?.message ?? 'error desconocido'}`;
+    return setLoginStatus(msg, true);
+  }
+  await bootstrapSession(data.session);
+});
+
+// Carga el perfil de la sesión y arranca la app (o muestra por qué no puede).
+async function bootstrapSession(session) {
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('*, organization:organizations(id, name, is_active, max_channels), agent:agents(*, role:roles(id, name, permissions))')
+    .eq('id', session.user.id)
+    .maybeSingle();
+
+  if (error) {
+    showBlocked('No se pudo cargar tu perfil', error.message);
+    return;
+  }
+  if (!profile) {
+    showBlocked('Sin acceso', 'Tu usuario existe pero no está vinculado a ninguna empresa. Contacta al administrador de la plataforma.');
+    return;
+  }
+  if (!profile.is_active || !profile.organization?.is_active) {
+    showBlocked('Acceso deshabilitado', profile.is_active ? 'Tu empresa está desactivada.' : 'Tu usuario fue desactivado. Contacta al administrador de tu empresa.');
+    return;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  if (profile.user_type === 'vendedor' && profile.agent?.access_expires_at && profile.agent.access_expires_at < today) {
+    showBlocked('Acceso vencido', `Tu acceso venció el ${profile.agent.access_expires_at}. Pide a tu empresa que lo renueve.`);
+    return;
+  }
+
+  // La pestaña de login debe coincidir con el tipo de cuenta.
+  const attempt = state.loginModeAttempt;
+  state.loginModeAttempt = null;
+  if (attempt && (attempt === 'empresa') !== (profile.user_type === 'admin')) {
+    await supabase.auth.signOut();
+    showScreen('login');
+    setLoginStatus(
+      profile.user_type === 'admin'
+        ? 'Esta cuenta es de empresa: ingresa por la pestaña “Empresa” con tu correo.'
+        : 'Esta cuenta es de vendedor: ingresa por la pestaña “Vendedor” con tu número.',
+      true
+    );
+    return;
+  }
+
+  const isAdmin = profile.user_type === 'admin' || profile.is_super_admin;
+  state.me = {
+    user: session.user,
+    profile,
+    organization: profile.organization,
+    agent: profile.agent,
+    isAdmin,
+    isSuperAdmin: Boolean(profile.is_super_admin),
+    permissions: new Set(isAdmin ? ALL_PERMISSION_KEYS : (profile.agent?.role?.permissions ?? [])),
+  };
+
+  applyPermissionGating();
+  renderAccountChip();
+  showScreen('app');
+  await startApp();
+}
+
 function renderAccountChip() {
-  document.getElementById('account-name').textContent = state.currentUser.name;
-  document.getElementById('account-email').textContent = state.currentUser.email;
-  document.getElementById('account-avatar').textContent = state.currentUser.name.trim().charAt(0).toUpperCase() || '?';
+  const me = state.me;
+  const name = me?.profile?.full_name || me?.agent?.name || me?.user?.email || '—';
+  const sub = !me
+    ? '—'
+    : me.profile.user_type === 'vendedor'
+      ? `${me.organization?.name ?? ''} · ${me.profile.phone ?? ''}`
+      : `${me.organization?.name ?? ''} · ${me.user.email ?? ''}`;
+  document.getElementById('account-name').textContent = name;
+  document.getElementById('account-email').textContent = sub;
+  document.getElementById('account-avatar').textContent = initials(name);
 }
 
 document.getElementById('open-account-settings-btn').addEventListener('click', () => {
   setSection('configuracion');
 });
 
+async function signOutAndReload() {
+  await supabase.auth.signOut();
+  location.reload();
+}
+
 document.getElementById('logout-btn').addEventListener('click', () => {
   if (!confirm('¿Cerrar sesión?')) return;
-  document.getElementById('logged-out-screen').hidden = false;
+  signOutAndReload();
 });
-document.getElementById('relogin-btn').addEventListener('click', () => location.reload());
+document.getElementById('blocked-logout-btn').addEventListener('click', signOutAndReload);
 
 document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'Escape') return;
@@ -4772,6 +5356,7 @@ document.addEventListener('keydown', (ev) => {
   if (!agentOverlay.hidden) agentOverlay.hidden = true;
   if (!assignOverlay.hidden) assignOverlay.hidden = true;
   if (!roleOverlay.hidden) roleOverlay.hidden = true;
+  if (!orgOverlay.hidden) orgOverlay.hidden = true;
   if (!statusPillPanel.hidden) closeStatusPanel();
   if (!customfieldOverlay.hidden) customfieldOverlay.hidden = true;
   if (!productOverlay.hidden) closeProductModal();
@@ -4786,14 +5371,22 @@ document.addEventListener('keydown', (ev) => {
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
-(async function init() {
-  renderAccountChip();
-  await Promise.all([loadAgents(), loadVendors(), loadCustomFields()]);
-  setSection('canales-lista');
+async function startApp() {
+  await Promise.all([loadAgents(), loadVendors(), loadCustomFields(), loadRoles()]);
+  setSection(defaultSection());
   if (state.vendorId) {
     await loadProspects();
     subscribeVendor(state.vendorId);
   } else {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="9">No hay vendors configurados todavía.</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="9">${
+      state.me.isAdmin ? 'No hay canales configurados todavía.' : 'Todavía no tienes un canal asignado. Pide a tu empresa que te asigne uno.'
+    }</td></tr>`;
   }
+}
+
+(async function init() {
+  fillDialSelects();
+  const { data } = await supabase.auth.getSession();
+  if (data.session) await bootstrapSession(data.session);
+  else showScreen('login');
 })();

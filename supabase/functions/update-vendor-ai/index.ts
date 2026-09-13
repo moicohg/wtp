@@ -1,22 +1,7 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { admin as supabase, getCaller, handleError, HttpError, json, preflight, requirePermission } from '../_shared/auth.ts';
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
-
-const CORS = {
-  'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
-}
+// Actualiza proveedor/clave/modelo/prompt de IA de un canal. Exige sesión con
+// el permiso config.ai_settings y solo toca canales de la empresa del que llama.
 
 const DEFAULT_MODEL: Record<string, string> = {
   anthropic: 'claude-sonnet-4-6',
@@ -25,54 +10,64 @@ const DEFAULT_MODEL: Record<string, string> = {
 };
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
-  if (req.method !== 'POST')   return new Response('Method Not Allowed', { status: 405 });
+  const early = preflight(req);
+  if (early) return early;
 
-  let body: { vendor_id: string; ai_provider: string; ai_api_key: string; ai_model?: string };
   try {
-    body = await req.json();
-  } catch {
-    return json({ error: 'Payload inválido' }, 400);
-  }
+    const caller = await getCaller(req);
+    requirePermission(caller, 'config.ai_settings');
 
-  const { vendor_id, ai_provider, ai_api_key, ai_model, system_prompt } = body as {
-    vendor_id: string; ai_provider?: string; ai_api_key?: string;
-    ai_model?: string; system_prompt?: string;
-  };
-
-  if (!vendor_id) {
-    return json({ error: 'Falta vendor_id' }, 400);
-  }
-
-  const updates: Record<string, unknown> = {};
-
-  if (ai_provider !== undefined && ai_api_key !== undefined) {
-    const validProviders = ['anthropic', 'openai', 'google'];
-    if (!validProviders.includes(ai_provider)) {
-      return json({ error: 'ai_provider inválido. Usa: anthropic, openai o google' }, 400);
+    let body: {
+      vendor_id?: string;
+      ai_provider?: string;
+      ai_api_key?: string;
+      ai_model?: string;
+      system_prompt?: string;
+    };
+    try {
+      body = await req.json();
+    } catch {
+      throw new HttpError(400, 'Payload inválido');
     }
-    updates.ai_provider = ai_provider;
-    updates.ai_api_key  = ai_api_key;
-    updates.ai_model    = ai_model || DEFAULT_MODEL[ai_provider];
+
+    const { vendor_id, ai_provider, ai_api_key, ai_model, system_prompt } = body;
+    if (!vendor_id) throw new HttpError(400, 'Falta vendor_id');
+
+    const updates: Record<string, unknown> = {};
+
+    if (ai_provider !== undefined && ai_api_key !== undefined) {
+      const validProviders = ['anthropic', 'openai', 'google'];
+      if (!validProviders.includes(ai_provider)) {
+        throw new HttpError(400, 'ai_provider inválido. Usa: anthropic, openai o google');
+      }
+      updates.ai_provider = ai_provider;
+      updates.ai_api_key  = ai_api_key;
+      updates.ai_model    = ai_model || DEFAULT_MODEL[ai_provider];
+    }
+
+    if (system_prompt !== undefined) {
+      updates.system_prompt = system_prompt || null;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      throw new HttpError(400, 'Nada que actualizar');
+    }
+
+    const { data, error } = await supabase
+      .from('vendors')
+      .update(updates)
+      .eq('id', vendor_id)
+      .eq('organization_id', caller.organizationId)
+      .select('id');
+
+    if (error) {
+      console.error('Error actualizando vendor AI config:', error);
+      throw new HttpError(500, error.message);
+    }
+    if (!data?.length) throw new HttpError(404, 'Canal no encontrado en tu empresa');
+
+    return json({ success: true });
+  } catch (err) {
+    return handleError(err);
   }
-
-  if (system_prompt !== undefined) {
-    updates.system_prompt = system_prompt || null;
-  }
-
-  if (Object.keys(updates).length === 0) {
-    return json({ error: 'Nada que actualizar' }, 400);
-  }
-
-  const { error } = await supabase
-    .from('vendors')
-    .update(updates)
-    .eq('id', vendor_id);
-
-  if (error) {
-    console.error('Error actualizando vendor AI config:', error);
-    return json({ error: error.message }, 500);
-  }
-
-  return json({ success: true });
 });
