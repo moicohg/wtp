@@ -86,6 +86,65 @@ body {
 }
 .sidebar-footer-item:hover { background: var(--bg); color: var(--text); }
 
+.config-vendor-cell { display: flex; align-items: center; gap: 9px; }
+.config-vendor-cell .account-avatar { width: 26px; height: 26px; font-size: 11.5px; }
+.role-badge {
+  display: inline-block; border: 1px solid var(--border); background: var(--bg);
+  border-radius: 999px; padding: 3px 12px; font-size: 12px; font-weight: 600; color: var(--text-dim);
+}
+.role-badge-full { background: color-mix(in srgb, var(--brand) 12%, transparent); border-color: transparent; color: var(--brand-dark); }
+.role-perm-count { font-size: 12.5px; }
+
+.config-panel[hidden] { display: none; }
+
+.role-shield { font-size: 15px; }
+.role-row-name { display: flex; align-items: center; gap: 9px; }
+
+.role-chips-row td { padding-top: 0; }
+.role-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0 10px; }
+.role-chip {
+  display: inline-block; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 999px; padding: 4px 12px; font-size: 12.5px; color: var(--text);
+}
+
+.role-template-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.role-template-grid[hidden] { display: none; }
+.role-template-card {
+  text-align: left; font: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--surface);
+  border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px;
+}
+.role-template-card:hover { border-color: color-mix(in srgb, var(--brand) 40%, var(--border)); }
+.role-template-card.is-active { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 6%, transparent); box-shadow: 0 0 0 1px var(--brand); }
+.role-template-card strong { font-size: 13.5px; }
+.role-template-card .muted { font-size: 12.5px; }
+.role-template-count { font-size: 11.5px; color: var(--text-dim); font-weight: 600; }
+
+.role-permissions-header { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--text-dim); }
+.role-categories { display: flex; flex-direction: column; gap: 8px; }
+.role-category { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.role-category-header {
+  width: 100%; display: flex; align-items: center; gap: 10px; font: inherit; text-align: left;
+  border: none; background: var(--surface); cursor: pointer; padding: 10px 14px; color: var(--text);
+}
+.role-cat-caret { color: var(--text-dim); font-size: 11px; width: 10px; }
+.role-cat-label { font-weight: 600; font-size: 13.5px; flex: 1; }
+.role-cat-count { font-size: 12px; color: var(--text-dim); }
+.role-cat-toggle-all { font-size: 12px; font-weight: 600; color: var(--brand-dark); }
+.role-cat-toggle-all:hover { text-decoration: underline; }
+.role-cat-note { margin: 0; padding: 0 14px 10px 34px; font-size: 12px; color: var(--text-dim); }
+.role-cat-warn { background: var(--warn-bg); }
+.role-cat-warn .role-category-header { background: transparent; }
+.role-cat-warn .role-cat-note { color: var(--warn); }
+.role-cat-danger { background: var(--danger-bg); }
+.role-cat-danger .role-category-header { background: transparent; }
+.role-cat-danger .role-cat-note { color: var(--danger); }
+.role-cat-body { display: flex; flex-direction: column; gap: 2px; padding: 2px 14px 10px 34px; }
+.role-cat-body[hidden] { display: none; }
+.role-perm-row { display: flex; align-items: flex-start; gap: 9px; padding: 6px 0; font-weight: 400; cursor: pointer; }
+.role-perm-row input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; }
+.role-perm-row strong { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
+.role-perm-desc { display: block; font-size: 12px; }
+
 .logged-out-screen {
   position: fixed; inset: 0; z-index: 1000; background: var(--bg);
   display: flex; align-items: center; justify-content: center; padding: 20px;
@@ -228,6 +287,7 @@ tbody tr:hover { background: var(--bg); }
 }
 .modal { height: auto; max-height: 90vh; width: min(560px, 92vw); border-radius: 14px; }
 .modal-sm { width: min(380px, 92vw); }
+.modal-lg { width: min(680px, 92vw); }
 
 /* ── Vista Canales: grilla de tarjetas ──────────────────────────────────── */
 

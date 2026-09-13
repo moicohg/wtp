@@ -27,6 +27,104 @@ const AGENT_STATUS_META = {
 };
 const AGENT_STATUS_ORDER = ['listo', 'atendiendo', 'pausa', 'fuera_de_atencion', 'inactivo_sistema', 'difusiones'];
 
+// ── Roles y permisos ─────────────────────────────────────────────────────────
+// Solo define los permisos disponibles y cómo se agrupan en la UI de
+// Configuración › Roles. No se hacen cumplir en ningún lado todavía — quedan
+// listos para usarse cuando el panel tenga login real (ver migración
+// 20260916000000_roles.sql).
+
+const PERMISSION_CATEGORIES = [
+  {
+    key: 'leads', label: 'Leads y contactos',
+    permissions: [
+      { key: 'leads.view', label: 'Ver leads', desc: 'Ver el listado de leads, sus negociaciones, etiquetas y campos personalizados.' },
+      { key: 'leads.edit', label: 'Editar leads', desc: 'Crear, editar y eliminar leads y negociaciones, y gestionar su calificación.' },
+      { key: 'leads.assign', label: 'Asignar leads', desc: 'Asignar y reasignar leads entre vendedores.' },
+      { key: 'leads.create_contacts', label: 'Crear contactos', desc: 'Crear contactos nuevos y reactivar contactos dados de baja.' },
+      { key: 'leads.manage_tags', label: 'Gestionar etiquetas', desc: 'Crear y eliminar las etiquetas de la empresa.' },
+    ],
+  },
+  {
+    key: 'messaging', label: 'Mensajería y campañas',
+    permissions: [
+      { key: 'messaging.view_broadcasts', label: 'Ver difusiones', desc: 'Entrar a Difusiones y ver el historial de campañas.' },
+      { key: 'messaging.send_broadcasts', label: 'Enviar difusiones', desc: 'Crear, enviar y cancelar campañas masivas.' },
+      { key: 'messaging.manage_templates', label: 'Gestionar plantillas', desc: 'Sincronizar plantillas con el proveedor y generarlas con IA.' },
+      { key: 'messaging.manage_automations', label: 'Gestionar automatizaciones', desc: 'Crear y administrar automatizaciones de seguimiento.' },
+    ],
+  },
+  {
+    key: 'agenda', label: 'Agenda y prioridad',
+    permissions: [
+      { key: 'agenda.view_priority_queue', label: 'Ver cola de prioridad', desc: 'Usar la cola de prioridad: ver a quién atender primero y posponer.' },
+      { key: 'agenda.manage', label: 'Gestionar agenda', desc: 'Gestionar la agenda de citas y conectar Google Calendar.' },
+    ],
+  },
+  {
+    key: 'analytics', label: 'Analítica',
+    permissions: [
+      { key: 'analytics.dashboard', label: 'Ver dashboard / analíticas', desc: 'Ver el dashboard de analítica (un vendedor solo ve sus propios datos).' },
+      { key: 'analytics.ai_usage', label: 'Ver consumo de IA', desc: 'Ver el consumo y costo de IA (un vendedor solo ve el suyo).' },
+    ],
+  },
+  {
+    key: 'config', label: 'Configuración e integraciones',
+    warn: 'Cambia la configuración de toda la empresa, no solo el trabajo del vendedor.',
+    permissions: [
+      { key: 'config.manage_channels', label: 'Gestionar canales', desc: 'Conectar, editar y eliminar canales, y asignarles vendedores.' },
+      { key: 'config.migrate_channels', label: 'Migrar canales', desc: 'Migrar canales entre proveedores.' },
+      { key: 'config.ai_settings', label: 'Configurar IA', desc: 'Configurar la integración de IA: clave de API y encendido por canal.' },
+      { key: 'config.alerts', label: 'Gestionar alertas', desc: 'Configurar las alertas de leads sin responder.' },
+      { key: 'config.products', label: 'Editar productos', desc: 'Crear, editar y eliminar productos del catálogo.' },
+    ],
+  },
+  {
+    key: 'users', label: 'Administración de usuarios',
+    danger: 'Permite administrar vendedores y roles. Quien tiene «Gestionar roles» puede otorgarse cualquier otro permiso.',
+    permissions: [
+      { key: 'users.manage_users', label: 'Gestionar usuarios', desc: 'Administrar los vendedores de la empresa.' },
+      { key: 'users.manage_roles', label: 'Gestionar roles', desc: 'Crear y editar roles, y asignárselos a los usuarios.' },
+    ],
+  },
+];
+
+const ALL_PERMISSION_KEYS = PERMISSION_CATEGORIES.flatMap((c) => c.permissions.map((p) => p.key));
+const ALL_PERMISSIONS_BY_KEY = Object.fromEntries(PERMISSION_CATEGORIES.flatMap((c) => c.permissions.map((p) => [p.key, p])));
+
+const ROLE_TEMPLATES = {
+  vendedor: {
+    label: 'Vendedor',
+    description: 'Trabaja sus leads, su agenda y ve sus propios resultados.',
+    permissions: [
+      'leads.view', 'leads.edit', 'leads.create_contacts', 'leads.manage_tags',
+      'messaging.view_broadcasts', 'messaging.manage_automations',
+      'agenda.view_priority_queue', 'agenda.manage',
+      'analytics.dashboard', 'analytics.ai_usage',
+    ],
+  },
+  supervisor: {
+    label: 'Supervisor',
+    description: 'Lo de Vendedor, más reparto de leads, campañas y automatizaciones.',
+    permissions: [
+      'leads.view', 'leads.edit', 'leads.assign', 'leads.create_contacts', 'leads.manage_tags',
+      'messaging.view_broadcasts', 'messaging.send_broadcasts', 'messaging.manage_templates', 'messaging.manage_automations',
+      'agenda.view_priority_queue', 'agenda.manage',
+      'analytics.dashboard', 'analytics.ai_usage',
+    ],
+  },
+  administrador: {
+    label: 'Administrador',
+    description: 'Control total, incluida la gestión de usuarios y roles.',
+    warn: true,
+    permissions: [...ALL_PERMISSION_KEYS],
+  },
+  blank: {
+    label: 'Empezar en blanco',
+    description: 'Elige los permisos uno por uno.',
+    permissions: [],
+  },
+};
+
 const AVAIL_ETAPA_META = {
   frio: 'Frío',
   por_depositar: 'Por depositar',
@@ -71,6 +169,14 @@ const state = {
   vendors: [],
   agents: [],
   currentUser: { name: 'Mi cuenta', email: 'Pendiente de login' }, // placeholder hasta conectar auth real
+  configTab: 'vendedores',
+  roles: [],
+  expandedRoleIds: new Set(),
+  roleModalMode: 'create',
+  editingRoleId: null,
+  roleModalPermissions: new Set(),
+  roleModalOpenCats: new Set(),
+  roleModalTemplate: null,
   vendorId: null, // vendor seleccionado en la pestaña Prospectos
   configVendorId: null, // vendor que se está editando en el modal de Configuración
   assignVendorId: null, // vendor que se está editando en el modal de Asignar
@@ -311,6 +417,24 @@ const automationSaveDraftBtn = document.getElementById('automation-save-draft-bt
 const automationActivateBtn = document.getElementById('automation-activate-btn');
 
 const viewDisponibilidad = document.getElementById('view-disponibilidad');
+const viewConfiguracion = document.getElementById('view-configuracion');
+const configVendorsTbody = document.getElementById('config-vendors-tbody');
+const configTabsEl = document.getElementById('config-tabs');
+const configPanels = {
+  vendedores: document.getElementById('config-panel-vendedores'),
+  roles: document.getElementById('config-panel-roles'),
+};
+const rolesTbody = document.getElementById('roles-tbody');
+const roleOverlay = document.getElementById('role-overlay');
+const roleForm = document.getElementById('role-form');
+const roleModalTitle = document.getElementById('role-modal-title');
+const roleModalSubtitle = document.getElementById('role-modal-subtitle');
+const roleTemplatePicker = document.getElementById('role-template-picker');
+const roleNameInput = document.getElementById('role-name-input');
+const rolePermissionsList = document.getElementById('role-permissions-list');
+const rolePermissionsCount = document.getElementById('role-permissions-count');
+const roleSubmitBtn = document.getElementById('role-submit-btn');
+const roleStatus = document.getElementById('role-status');
 const availQueueBadge = document.getElementById('avail-queue-badge');
 const availQueueCount = document.getElementById('avail-queue-count');
 const availQueueWord = document.getElementById('avail-queue-word');
@@ -510,6 +634,7 @@ async function setSection(section) {
   const isCatalogo = section === 'catalogo-ia';
   const isAutomatizacion = section === 'automatizacion';
   const isDisponibilidad = section === 'disponibilidad';
+  const isConfiguracion = section === 'configuracion';
   const isPlaceholder =
     !isCanales &&
     !isLeads &&
@@ -519,7 +644,8 @@ async function setSection(section) {
     !isProductos &&
     !isCatalogo &&
     !isAutomatizacion &&
-    !isDisponibilidad;
+    !isDisponibilidad &&
+    !isConfiguracion;
 
   viewDashboard.hidden = !isDashboard;
   viewCanales.hidden = !isCanales;
@@ -530,6 +656,7 @@ async function setSection(section) {
   viewCatalogo.hidden = !isCatalogo;
   viewAutomatizacion.hidden = !isAutomatizacion;
   viewDisponibilidad.hidden = !isDisponibilidad;
+  viewConfiguracion.hidden = !isConfiguracion;
   viewPlaceholder.hidden = !isPlaceholder;
   document.querySelector('[data-section-group="canales"]').hidden = !isCanales;
   document.querySelector('[data-section-group="leads"]').hidden = !isLeads;
@@ -555,6 +682,12 @@ async function setSection(section) {
   } else if (isDisponibilidad) {
     topbarTitle.textContent = 'Disponibilidad';
     await loadAvailability();
+  } else if (isConfiguracion) {
+    topbarTitle.textContent = 'Configuración';
+    setConfigTab(state.configTab);
+    renderConfigVendedores();
+    await loadRoles();
+    renderRolesTable();
   } else if (section === 'bandeja-global') {
     topbarTitle.textContent = 'Bandeja Global';
     state.inboxVendorLock = null;
@@ -4022,10 +4155,18 @@ async function createVendor(ev) {
 
 // ── Crear vendedor (agente) ──────────────────────────────────────────────────
 
+function openAgentModal() {
+  agentForm.reset();
+  agentStatus.textContent = '';
+  agentOverlay.hidden = false;
+}
+
 async function createAgent(ev) {
   ev.preventDefault();
   const fd = new FormData(agentForm);
-  const name = fd.get('name')?.toString().trim();
+  const firstName = fd.get('first_name')?.toString().trim();
+  const lastName = fd.get('last_name')?.toString().trim();
+  const name = [firstName, lastName].filter(Boolean).join(' ');
   if (!name) {
     agentStatus.textContent = 'El nombre es obligatorio.';
     agentStatus.className = 'settings-status err';
@@ -4035,10 +4176,14 @@ async function createAgent(ev) {
   agentStatus.textContent = 'Creando…';
   agentStatus.className = 'settings-status';
 
+  // La contraseña no se guarda: esta tabla es legible con la anon key (sin
+  // capa de auth todavía), así que no hay dónde ponerla de forma segura.
+  // Se activará cuando el vendedor pueda iniciar sesión de verdad.
   const { error } = await supabase.from('agents').insert({
     name,
     email: fd.get('email')?.toString().trim() || null,
     phone: fd.get('phone')?.toString().trim() || null,
+    access_expires_at: fd.get('access_expires_at')?.toString().trim() || null,
   });
 
   if (error) {
@@ -4051,9 +4196,311 @@ async function createAgent(ev) {
   agentStatus.className = 'settings-status ok';
   await loadAgents();
   renderVendorCards();
+  renderConfigVendedores();
   agentForm.reset();
   setTimeout(() => (agentOverlay.hidden = true), 600);
 }
+
+async function deleteAgent(agentId) {
+  const agent = state.agents.find((a) => a.id === agentId);
+  if (!agent) return;
+  if (!confirm(`¿Eliminar a ${agent.name}?`)) return;
+
+  const { error } = await supabase.from('agents').delete().eq('id', agentId);
+  if (error) {
+    alert(`No se pudo eliminar: ${error.message}`);
+    return;
+  }
+  await loadAgents();
+  renderVendorCards();
+  renderConfigVendedores();
+}
+
+function renderConfigVendedores() {
+  if (!state.agents.length) {
+    configVendorsTbody.innerHTML = `<tr class="empty-row"><td colspan="5">No hay vendedores registrados todavía.</td></tr>`;
+    return;
+  }
+
+  configVendorsTbody.innerHTML = state.agents
+    .map((a) => {
+      return `
+        <tr data-id="${a.id}">
+          <td>
+            <div class="config-vendor-cell">
+              <span class="account-avatar">${initials(a.name)}</span>
+              <span>${escapeHtml(a.name)}</span>
+            </div>
+          </td>
+          <td>${escapeHtml(a.phone) || '—'}</td>
+          <td>${escapeHtml(a.email) || '—'}</td>
+          <td><span class="role-badge">Vendedores</span></td>
+          <td><button type="button" class="btn-icon config-delete-agent-btn" data-id="${a.id}" title="Eliminar" aria-label="Eliminar">🗑</button></td>
+        </tr>
+      `;
+    })
+    .join('');
+}
+
+configVendorsTbody.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.config-delete-agent-btn');
+  if (!btn) return;
+  deleteAgent(btn.dataset.id);
+});
+
+function setConfigTab(tab) {
+  state.configTab = tab;
+  configTabsEl.querySelectorAll('.chip').forEach((c) => c.classList.toggle('is-active', c.dataset.configTab === tab));
+  Object.entries(configPanels).forEach(([key, el]) => (el.hidden = key !== tab));
+}
+configTabsEl.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.chip[data-config-tab]');
+  if (!btn) return;
+  setConfigTab(btn.dataset.configTab);
+});
+
+// ── Roles y permisos ─────────────────────────────────────────────────────────
+
+async function loadRoles() {
+  const { data, error } = await supabase
+    .from('roles')
+    .select('*')
+    .order('is_system', { ascending: false })
+    .order('created_at', { ascending: true });
+  if (error) {
+    console.error('Error cargando roles:', error.message);
+    return;
+  }
+  state.roles = data ?? [];
+}
+
+function renderRolesTable() {
+  if (!state.roles.length) {
+    rolesTbody.innerHTML = `<tr class="empty-row"><td colspan="2">No hay roles todavía.</td></tr>`;
+    return;
+  }
+
+  rolesTbody.innerHTML = state.roles
+    .map((r) => {
+      const count = r.permissions.length;
+      const expanded = state.expandedRoleIds.has(r.id);
+      const badge = r.is_system
+        ? `<span class="role-badge role-badge-full">Acceso completo</span>`
+        : `<span class="role-badge">Personalizado</span><span class="muted role-perm-count">${count} permiso${count === 1 ? '' : 's'}</span>`;
+      const actions = r.is_system
+        ? ''
+        : `
+          <button type="button" class="btn-icon role-edit-btn" data-id="${r.id}" title="Editar" aria-label="Editar">✏️</button>
+          <button type="button" class="btn-icon role-delete-btn" data-id="${r.id}" title="Eliminar" aria-label="Eliminar">🗑</button>
+        `;
+      const chipsRow = expanded
+        ? `<tr class="role-chips-row"><td colspan="2"><div class="role-chips">${r.permissions
+            .map((key) => (ALL_PERMISSIONS_BY_KEY[key] ? `<span class="role-chip">${escapeHtml(ALL_PERMISSIONS_BY_KEY[key].label)}</span>` : ''))
+            .join('') || '<span class="muted">Sin permisos.</span>'}</div></td></tr>`
+        : '';
+      return `
+        <tr data-id="${r.id}">
+          <td>
+            <div class="role-row-name">
+              <span class="role-shield">🛡️</span>
+              <strong>${escapeHtml(r.name)}</strong>
+              ${badge}
+            </div>
+          </td>
+          <td>
+            ${actions}
+            <button type="button" class="btn-icon role-toggle-btn" data-id="${r.id}" aria-label="Ver permisos">${expanded ? '▾' : '▸'}</button>
+          </td>
+        </tr>
+        ${chipsRow}
+      `;
+    })
+    .join('');
+}
+
+rolesTbody.addEventListener('click', (ev) => {
+  const editBtn = ev.target.closest('.role-edit-btn');
+  if (editBtn) {
+    const role = state.roles.find((r) => r.id === editBtn.dataset.id);
+    if (role) openRoleModal('edit', role);
+    return;
+  }
+  const delBtn = ev.target.closest('.role-delete-btn');
+  if (delBtn) {
+    deleteRole(delBtn.dataset.id);
+    return;
+  }
+  const toggleBtn = ev.target.closest('.role-toggle-btn');
+  if (toggleBtn) {
+    const id = toggleBtn.dataset.id;
+    if (state.expandedRoleIds.has(id)) state.expandedRoleIds.delete(id);
+    else state.expandedRoleIds.add(id);
+    renderRolesTable();
+  }
+});
+
+async function deleteRole(roleId) {
+  const role = state.roles.find((r) => r.id === roleId);
+  if (!role || role.is_system) return;
+  if (!confirm(`¿Eliminar el rol "${role.name}"?`)) return;
+
+  const { error } = await supabase.from('roles').delete().eq('id', roleId);
+  if (error) {
+    alert(`No se pudo eliminar: ${error.message}`);
+    return;
+  }
+  await loadRoles();
+  renderRolesTable();
+}
+
+function renderTemplatePicker() {
+  roleTemplatePicker.innerHTML = Object.entries(ROLE_TEMPLATES)
+    .map(
+      ([key, t]) => `
+        <button type="button" class="role-template-card ${state.roleModalTemplate === key ? 'is-active' : ''}" data-template="${key}">
+          <strong>${escapeHtml(t.label)} ${t.warn ? '⚠️' : ''}</strong>
+          <span class="muted">${escapeHtml(t.description)}</span>
+          <span class="role-template-count">${t.permissions.length} permisos</span>
+        </button>
+      `
+    )
+    .join('');
+}
+
+function renderPermissionCategories() {
+  const selected = state.roleModalPermissions;
+  rolePermissionsList.innerHTML = PERMISSION_CATEGORIES.map((cat) => {
+    const total = cat.permissions.length;
+    const checked = cat.permissions.filter((p) => selected.has(p.key)).length;
+    const allChecked = checked === total;
+    const noteClass = cat.danger ? 'role-cat-danger' : cat.warn ? 'role-cat-warn' : '';
+    const note = cat.danger || cat.warn;
+    const isOpen = state.roleModalOpenCats.has(cat.key);
+    return `
+      <div class="role-category ${noteClass}">
+        <button type="button" class="role-category-header" data-cat-toggle="${cat.key}">
+          <span class="role-cat-caret">${isOpen ? '▾' : '▸'}</span>
+          <span class="role-cat-label">${escapeHtml(cat.label)}</span>
+          <span class="role-cat-count">${checked} de ${total}</span>
+          <span class="role-cat-toggle-all" data-cat-toggle-all="${cat.key}">${allChecked ? 'Quitar todo' : 'Todo'}</span>
+        </button>
+        ${note ? `<p class="role-cat-note">${escapeHtml(note)}</p>` : ''}
+        <div class="role-cat-body" data-cat-body="${cat.key}" ${isOpen ? '' : 'hidden'}>
+          ${cat.permissions
+            .map(
+              (p) => `
+                <label class="role-perm-row">
+                  <input type="checkbox" data-perm="${p.key}" ${selected.has(p.key) ? 'checked' : ''} />
+                  <span>
+                    <strong>${escapeHtml(p.label)}</strong>
+                    <span class="muted role-perm-desc">${escapeHtml(p.desc)}</span>
+                  </span>
+                </label>
+              `
+            )
+            .join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const total = ALL_PERMISSION_KEYS.length;
+  rolePermissionsCount.textContent = selected.size ? `${selected.size} de ${total} seleccionados` : 'Sin permisos seleccionados';
+}
+
+function openRoleModal(mode, role = null) {
+  state.roleModalMode = mode;
+  state.editingRoleId = role?.id ?? null;
+  state.roleModalPermissions = new Set(role?.permissions ?? []);
+  state.roleModalOpenCats = new Set();
+  state.roleModalTemplate = null;
+
+  roleModalTitle.textContent = mode === 'edit' ? 'Editar rol' : 'Nuevo rol';
+  roleModalSubtitle.textContent =
+    mode === 'edit' ? 'Ajusta el nombre y los permisos de este rol.' : 'Elige un punto de partida y ajusta los permisos si hace falta.';
+  roleTemplatePicker.hidden = mode === 'edit';
+  roleNameInput.value = role?.name ?? '';
+  roleSubmitBtn.textContent = mode === 'edit' ? 'Guardar cambios' : 'Crear rol';
+  roleStatus.textContent = '';
+  roleStatus.className = 'settings-status';
+
+  if (mode === 'create') renderTemplatePicker();
+  renderPermissionCategories();
+  roleOverlay.hidden = false;
+}
+
+roleTemplatePicker.addEventListener('click', (ev) => {
+  const card = ev.target.closest('[data-template]');
+  if (!card) return;
+  const key = card.dataset.template;
+  state.roleModalTemplate = key;
+  state.roleModalPermissions = new Set(ROLE_TEMPLATES[key].permissions);
+  renderTemplatePicker();
+  renderPermissionCategories();
+});
+
+rolePermissionsList.addEventListener('click', (ev) => {
+  const toggleAll = ev.target.closest('[data-cat-toggle-all]');
+  if (toggleAll) {
+    const cat = PERMISSION_CATEGORIES.find((c) => c.key === toggleAll.dataset.catToggleAll);
+    const allChecked = cat.permissions.every((p) => state.roleModalPermissions.has(p.key));
+    cat.permissions.forEach((p) => (allChecked ? state.roleModalPermissions.delete(p.key) : state.roleModalPermissions.add(p.key)));
+    renderPermissionCategories();
+    return;
+  }
+  const header = ev.target.closest('.role-category-header');
+  if (header) {
+    const catKey = header.dataset.catToggle;
+    if (state.roleModalOpenCats.has(catKey)) state.roleModalOpenCats.delete(catKey);
+    else state.roleModalOpenCats.add(catKey);
+    renderPermissionCategories();
+  }
+});
+
+rolePermissionsList.addEventListener('change', (ev) => {
+  const cb = ev.target.closest('input[data-perm]');
+  if (!cb) return;
+  if (cb.checked) state.roleModalPermissions.add(cb.dataset.perm);
+  else state.roleModalPermissions.delete(cb.dataset.perm);
+  renderPermissionCategories();
+});
+
+async function saveRole(ev) {
+  ev.preventDefault();
+  const name = roleNameInput.value.trim();
+  if (!name) {
+    roleStatus.textContent = 'El nombre del rol es obligatorio.';
+    roleStatus.className = 'settings-status err';
+    return;
+  }
+
+  roleStatus.textContent = 'Guardando…';
+  roleStatus.className = 'settings-status';
+
+  const payload = { name, permissions: Array.from(state.roleModalPermissions) };
+  const { error } = state.editingRoleId
+    ? await supabase.from('roles').update(payload).eq('id', state.editingRoleId)
+    : await supabase.from('roles').insert(payload);
+
+  if (error) {
+    roleStatus.textContent = `Error: ${error.message}`;
+    roleStatus.className = 'settings-status err';
+    return;
+  }
+
+  roleStatus.textContent = state.editingRoleId ? 'Rol actualizado ✓' : 'Rol creado ✓';
+  roleStatus.className = 'settings-status ok';
+  await loadRoles();
+  renderRolesTable();
+  setTimeout(() => (roleOverlay.hidden = true), 600);
+}
+
+document.getElementById('create-role-btn').addEventListener('click', () => openRoleModal('create'));
+document.getElementById('role-modal-close').addEventListener('click', () => (roleOverlay.hidden = true));
+roleOverlay.addEventListener('click', (ev) => {
+  if (ev.target === roleOverlay) roleOverlay.hidden = true;
+});
+roleForm.addEventListener('submit', saveRole);
 
 // ── Asignar vendedor a un canal ───────────────────────────────────────────────
 
@@ -4163,11 +4610,8 @@ vendorOverlay.addEventListener('click', (ev) => {
 vendorForm.addEventListener('submit', createVendor);
 vendorConnectionType.addEventListener('change', updateVendorFormConnectionType);
 
-document.getElementById('create-agent-btn').addEventListener('click', () => {
-  agentForm.reset();
-  agentStatus.textContent = '';
-  agentOverlay.hidden = false;
-});
+document.getElementById('create-agent-btn').addEventListener('click', openAgentModal);
+document.getElementById('create-agent-btn-config').addEventListener('click', openAgentModal);
 document.getElementById('agent-modal-close').addEventListener('click', () => (agentOverlay.hidden = true));
 agentOverlay.addEventListener('click', (ev) => {
   if (ev.target === agentOverlay) agentOverlay.hidden = true;
@@ -4187,7 +4631,7 @@ function renderAccountChip() {
 }
 
 document.getElementById('open-account-settings-btn').addEventListener('click', () => {
-  alert('Configuración de la cuenta: próximamente.');
+  setSection('configuracion');
 });
 
 document.getElementById('logout-btn').addEventListener('click', () => {
@@ -4203,6 +4647,7 @@ document.addEventListener('keydown', (ev) => {
   if (!vendorOverlay.hidden) vendorOverlay.hidden = true;
   if (!agentOverlay.hidden) agentOverlay.hidden = true;
   if (!assignOverlay.hidden) assignOverlay.hidden = true;
+  if (!roleOverlay.hidden) roleOverlay.hidden = true;
   if (!customfieldOverlay.hidden) customfieldOverlay.hidden = true;
   if (!productOverlay.hidden) closeProductModal();
   if (!autofillOverlay.hidden) closeAutofillModal();

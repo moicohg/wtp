@@ -320,6 +320,67 @@
         </div>
       </section>
 
+      <!-- ═══ Vista: Configuración (Vendedores) ═══════════════════════════ -->
+      <section id="view-configuracion" class="view" hidden>
+        <div class="filters config-tabs" id="config-tabs">
+          <button class="chip is-active" data-config-tab="vendedores" type="button">👤 Vendedores</button>
+          <button class="chip" data-config-tab="roles" type="button">🛡️ Roles</button>
+        </div>
+
+        <!-- Tab: Vendedores -->
+        <div class="config-panel" id="config-panel-vendedores">
+          <div class="page-heading-row">
+            <div>
+              <h3>Vendedores</h3>
+              <p class="muted">Administra los vendedores de tu empresa</p>
+            </div>
+            <button id="create-agent-btn-config" class="btn btn-primary" type="button">＋ Nuevo vendedor</button>
+          </div>
+
+          <div class="table-wrap">
+            <table id="config-vendors-table">
+              <thead>
+                <tr>
+                  <th>Vendedor</th>
+                  <th>Teléfono</th>
+                  <th>Correo</th>
+                  <th>Rol</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="config-vendors-tbody">
+                <tr class="empty-row"><td colspan="5">Cargando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab: Roles -->
+        <div class="config-panel" id="config-panel-roles" hidden>
+          <div class="page-heading-row">
+            <div>
+              <h3>Roles</h3>
+              <p class="muted">Gestiona los roles y permisos de tu empresa</p>
+            </div>
+            <button id="create-role-btn" class="btn btn-primary" type="button">＋ Nuevo rol</button>
+          </div>
+
+          <div class="table-wrap">
+            <table id="roles-table">
+              <thead>
+                <tr>
+                  <th>Rol</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="roles-tbody">
+                <tr class="empty-row"><td colspan="2">Cargando…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <!-- ═══ Vista: Leads ══════════════════════════════════════════════ -->
       <section id="view-leads" class="view" hidden>
         <section class="kpis" id="kpis">
@@ -872,20 +933,65 @@
       </div>
       <form id="agent-form" class="settings-form">
         <label>
-          Nombre
-          <input name="name" type="text" placeholder="Nombre del vendedor" required />
+          Nombres
+          <input name="first_name" type="text" placeholder="Nombres del vendedor" required />
+        </label>
+        <label>
+          Apellidos
+          <input name="last_name" type="text" placeholder="Apellidos del vendedor" />
         </label>
         <label>
           Correo
           <input name="email" type="email" placeholder="correo@ejemplo.com" />
         </label>
         <label>
+          Contraseña <span class="hint">(se activará cuando el vendedor pueda iniciar sesión — todavía no)</span>
+          <input name="password" type="password" placeholder="••••••••" autocomplete="new-password" />
+        </label>
+        <label>
           Teléfono
           <input name="phone" type="text" placeholder="51999999999" />
+        </label>
+        <label>
+          Acceso vence <span class="hint">(opcional)</span>
+          <input name="access_expires_at" type="date" />
         </label>
         <div class="settings-actions">
           <span id="agent-status" class="settings-status"></span>
           <button type="submit" class="btn btn-primary">Crear vendedor</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: crear/editar rol -->
+  <div id="role-overlay" class="overlay" hidden>
+    <div class="modal modal-lg">
+      <div class="drawer-header">
+        <h2 id="role-modal-title">Nuevo rol</h2>
+        <button class="btn-icon" id="role-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="role-form" class="settings-form">
+        <p class="muted" id="role-modal-subtitle" style="margin-top:-8px;">Elige un punto de partida y ajusta los permisos si hace falta.</p>
+
+        <div id="role-template-picker" class="role-template-grid"></div>
+
+        <label>
+          Nombre del rol
+          <input id="role-name-input" name="name" type="text" placeholder="Ej. Supervisor" required />
+        </label>
+
+        <div class="role-permissions-header">
+          <span>Permisos</span>
+          <span class="muted" id="role-permissions-count">Sin permisos seleccionados</span>
+        </div>
+        <div id="role-permissions-list" class="role-categories"></div>
+
+        <p class="hint">ℹ️ Los permisos solo aplican a usuarios de tipo Vendedor. Los usuarios de tipo Empresa o Administrador tienen acceso completo sin importar su rol.</p>
+
+        <div class="settings-actions">
+          <span id="role-status" class="settings-status"></span>
+          <button type="submit" class="btn btn-primary" id="role-submit-btn">Crear rol</button>
         </div>
       </form>
     </div>
