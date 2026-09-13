@@ -35,6 +35,18 @@
         <button class="sidenav-item" data-section="automatizacion" type="button">Automatización</button>
         <button class="sidenav-item" data-section="disponibilidad" type="button">Disponibilidad</button>
       </nav>
+
+      <div class="sidebar-footer">
+        <div class="account-chip">
+          <span class="account-avatar" id="account-avatar">U</span>
+          <span class="account-info">
+            <span class="account-name" id="account-name">Mi cuenta</span>
+            <span class="account-email" id="account-email">Pendiente de login</span>
+          </span>
+        </div>
+        <button class="sidebar-footer-item" id="open-account-settings-btn" type="button">⚙️ Configuración</button>
+        <button class="sidebar-footer-item" id="logout-btn" type="button">🚪 Cerrar sesión</button>
+      </div>
     </aside>
 
     <div class="main">
@@ -1192,6 +1204,16 @@
           <button type="button" class="btn btn-primary" id="avail-assign-confirm-btn">Asignar</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Pantalla: sesión cerrada -->
+  <div id="logged-out-screen" class="logged-out-screen" hidden>
+    <div class="logged-out-card">
+      <div class="logged-out-icon">🔒</div>
+      <h2>Sesión cerrada</h2>
+      <p class="muted">Cerraste sesión en el panel. Vuelve a ingresar para continuar.</p>
+      <button type="button" class="btn btn-primary" id="relogin-btn">Volver a iniciar sesión</button>
     </div>
   </div>
 

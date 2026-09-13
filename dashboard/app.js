@@ -70,6 +70,7 @@ const state = {
   section: 'canales-lista',
   vendors: [],
   agents: [],
+  currentUser: { name: 'Mi cuenta', email: 'Pendiente de login' }, // placeholder hasta conectar auth real
   vendorId: null, // vendor seleccionado en la pestaña Prospectos
   configVendorId: null, // vendor que se está editando en el modal de Configuración
   assignVendorId: null, // vendor que se está editando en el modal de Asignar
@@ -4179,6 +4180,22 @@ assignOverlay.addEventListener('click', (ev) => {
 });
 assignForm.addEventListener('submit', saveAssign);
 
+function renderAccountChip() {
+  document.getElementById('account-name').textContent = state.currentUser.name;
+  document.getElementById('account-email').textContent = state.currentUser.email;
+  document.getElementById('account-avatar').textContent = state.currentUser.name.trim().charAt(0).toUpperCase() || '?';
+}
+
+document.getElementById('open-account-settings-btn').addEventListener('click', () => {
+  alert('Configuración de la cuenta: próximamente.');
+});
+
+document.getElementById('logout-btn').addEventListener('click', () => {
+  if (!confirm('¿Cerrar sesión?')) return;
+  document.getElementById('logged-out-screen').hidden = false;
+});
+document.getElementById('relogin-btn').addEventListener('click', () => location.reload());
+
 document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'Escape') return;
   if (!drawerOverlay.hidden) closeDrawer();
@@ -4200,6 +4217,7 @@ document.addEventListener('keydown', (ev) => {
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 (async function init() {
+  renderAccountChip();
   await Promise.all([loadAgents(), loadVendors(), loadCustomFields()]);
   setSection('canales-lista');
   if (state.vendorId) {
