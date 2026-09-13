@@ -67,8 +67,7 @@ Deno.serve(async (req: Request) => {
   const { error } = await supabase
     .from('vendors')
     .update(updates)
-    .eq('id', vendor_id)
-    .eq('channel_type', 'meta');
+    .eq('id', vendor_id);
 
   if (error) {
     console.error('Error actualizando vendor AI config:', error);

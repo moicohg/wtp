@@ -15,9 +15,55 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ── Estado ───────────────────────────────────────────────────────────────────
 
-const PLACEHOLDER_INFO = {
-  automatizacion: ['🔁', 'Automatización', 'Reglas y flujos automáticos (difusiones, recordatorios, etc). Todavía no está construida.'],
-  disponibilidad: ['🗓', 'Disponibilidad', 'Calendario de horarios/citas de los asesores. Todavía no está construida.'],
+const PLACEHOLDER_INFO = {};
+
+const AGENT_STATUS_META = {
+  listo: { icon: '⚡', label: 'Listo para vender', color: 'ok' },
+  atendiendo: { icon: '🎧', label: 'Atendiendo cliente', color: 'cold' },
+  pausa: { icon: '☕', label: 'Pausa breve', color: 'warn' },
+  fuera_de_atencion: { icon: '🌙', label: 'Fuera de atención', color: 'off' },
+  inactivo_sistema: { icon: '⛔', label: 'Inactivo (sistema)', color: 'danger' },
+  difusiones: { icon: '📣', label: 'Enviando difusiones', color: 'purple' },
+};
+const AGENT_STATUS_ORDER = ['listo', 'atendiendo', 'pausa', 'fuera_de_atencion', 'inactivo_sistema', 'difusiones'];
+
+const AVAIL_ETAPA_META = {
+  frio: 'Frío',
+  por_depositar: 'Por depositar',
+  venta: 'Venta',
+  perdido: 'Perdido',
+};
+
+const AUTOMATION_TEMPLATES = {
+  webinar: {
+    label: 'Webinar — 14 días',
+    description: 'Seguimiento de invitación a webinar: invitación, recordatorio con beneficio, caso de éxito y last call.',
+    steps: [
+      { day: 1, title: 'Invitación', hour: 10, message: 'Hola {{nombre}} 👋 Te invitamos a nuestro webinar gratuito. Cupos limitados, ¿te reservo un lugar?' },
+      { day: 3, title: 'Recordatorio con beneficio', hour: 11, message: 'Hola {{nombre}}, quedan pocos cupos para el webinar. Los asistentes acceden a un beneficio exclusivo el mismo día 🎁 ¿Te apunto?' },
+      { day: 5, title: 'Caso de éxito', hour: 10, message: '{{nombre}}, en el último webinar varios participantes concretaron su inversión en menos de un mes. Me encantaría que veas cómo lo lograron. ¿Te reservo el cupo?' },
+      { day: 12, title: 'Last call', hour: 10, message: '{{nombre}}, último aviso: el webinar es muy pronto y estamos cerrando la lista. ¿Confirmo tu asistencia? ✅' },
+    ],
+  },
+  promocion: {
+    label: 'Promoción — 7 días',
+    description: 'Seguimiento corto para promociones con fecha límite: anuncio, beneficio concreto y cierre por urgencia.',
+    steps: [
+      { day: 1, title: 'Anuncio de promoción', hour: 10, message: 'Hola {{nombre}} 👋 Lanzamos una promoción especial por tiempo limitado. ¿Te comparto los detalles?' },
+      { day: 3, title: 'Beneficio concreto', hour: 11, message: '{{nombre}}, la promo incluye condiciones especiales de financiamiento que rara vez ofrecemos. ¿Conversamos hoy?' },
+      { day: 6, title: 'Cierre por urgencia', hour: 10, message: '{{nombre}}, mañana termina la promoción. No quiero que la pierdas si estabas interesado/a. ¿Te llamo?' },
+    ],
+  },
+  lanzamiento: {
+    label: 'Lanzamiento — 10 días',
+    description: 'Seguimiento para lanzamiento de proyecto/producto: expectativa, revelación, prueba social y última oportunidad.',
+    steps: [
+      { day: 1, title: 'Expectativa', hour: 10, message: 'Hola {{nombre}} 👋 Estamos por lanzar algo que creemos que te va a interesar mucho. ¿Quieres ser de los primeros en conocerlo?' },
+      { day: 4, title: 'Revelación', hour: 11, message: '{{nombre}}, ¡ya está aquí! Te comparto la información del lanzamiento con condiciones preferenciales para los primeros interesados.' },
+      { day: 7, title: 'Prueba social', hour: 10, message: '{{nombre}}, la acogida ha sido increíble: ya se reservó gran parte de la primera etapa. ¿Te separo una opción antes de que se agote?' },
+      { day: 10, title: 'Última oportunidad', hour: 10, message: '{{nombre}}, cerramos la etapa de pre-venta esta semana. Es la última oportunidad con estas condiciones. ¿Coordinamos una llamada?' },
+    ],
+  },
 };
 
 const state = {
@@ -84,6 +130,18 @@ Object.assign(state, {
   catalogChannelFilter: '',
   catalogMultiSelect: false,
   catalogSelectedIds: new Set(),
+
+  automations: [],
+  automationTemplateKey: null,
+  automationPending: null, // { name, template, ignore_exit_on_conversion, steps } — entre el editor y el paso de audiencia
+
+  availTab: 'tiempo-real',
+  availRangeDays: 7,
+  availColaRows: [],
+  availAssigningProspectId: null,
+  availSettings: null, // fila singleton de availability_settings
+  availAlertPhones: [], // edición en curso (antes de "Guardar configuración")
+  availAlertEtapas: [],
 
   // Composer: grabación de nota de voz
   mediaRecorder: null,
@@ -222,6 +280,85 @@ const catalogAnalyzeOverlay = document.getElementById('catalog-analyze-overlay')
 const catalogAnalyzeForm = document.getElementById('catalog-analyze-form');
 const catalogAnalyzeStatus = document.getElementById('catalog-analyze-status');
 const catalogAnalyzeVendorSelect = document.getElementById('catalog-analyze-vendor');
+
+const viewAutomatizacion = document.getElementById('view-automatizacion');
+const automationsListEl = document.getElementById('automations-list');
+const automationNewBtn = document.getElementById('automation-new-btn');
+
+const automationTemplateOverlay = document.getElementById('automation-template-overlay');
+const automationTemplateListEl = document.getElementById('automation-template-list');
+const automationScratchBtn = document.getElementById('automation-scratch-btn');
+
+const automationEditorOverlay = document.getElementById('automation-editor-overlay');
+const automationEditorForm = document.getElementById('automation-editor-form');
+const automationEditorStatus = document.getElementById('automation-editor-status');
+const automationNameInput = document.getElementById('automation-name-input');
+const automationStepsListEl = document.getElementById('automation-steps-list');
+const automationIgnoreExitInput = document.getElementById('automation-ignore-exit');
+const automationAddStepBtn = document.getElementById('automation-add-step-btn');
+const automationBackBtn = document.getElementById('automation-back-btn');
+
+const automationAudienceOverlay = document.getElementById('automation-audience-overlay');
+const audienceTempChipsEl = document.getElementById('audience-temp-chips');
+const audienceEtapaChipsEl = document.getElementById('audience-etapa-chips');
+const audienceScoreMinInput = document.getElementById('audience-score-min');
+const audienceScoreMaxInput = document.getElementById('audience-score-max');
+const audiencePreviewBtn = document.getElementById('audience-preview-btn');
+const audiencePreviewResult = document.getElementById('audience-preview-result');
+const automationAudienceStatus = document.getElementById('automation-audience-status');
+const automationSaveDraftBtn = document.getElementById('automation-save-draft-btn');
+const automationActivateBtn = document.getElementById('automation-activate-btn');
+
+const viewDisponibilidad = document.getElementById('view-disponibilidad');
+const availQueueBadge = document.getElementById('avail-queue-badge');
+const availQueueCount = document.getElementById('avail-queue-count');
+const availQueueWord = document.getElementById('avail-queue-word');
+const availTabsEl = document.getElementById('avail-tabs');
+const availTabColaBadge = document.getElementById('avail-tab-cola-badge');
+const availPanels = {
+  'tiempo-real': document.getElementById('avail-panel-tiempo-real'),
+  kpis: document.getElementById('avail-panel-kpis'),
+  cola: document.getElementById('avail-panel-cola'),
+  config: document.getElementById('avail-panel-config'),
+};
+
+const availStatusKpisEl = document.getElementById('avail-status-kpis');
+const availAgentCardsEl = document.getElementById('avail-agent-cards');
+
+const availRangeTrigger = document.getElementById('avail-range-trigger');
+const availRangePanel = document.getElementById('avail-range-panel');
+const availRangeLabel = document.getElementById('avail-range-label');
+const availAgentCountEl = document.getElementById('avail-agent-count');
+const availKpiGridEl = document.getElementById('avail-kpi-grid');
+const availDetailTbody = document.getElementById('avail-detail-tbody');
+
+const availColaBanner = document.getElementById('avail-cola-banner');
+const availColaListEl = document.getElementById('avail-cola-list');
+
+const availSmartToggle = document.getElementById('avail-smart-toggle');
+const availPriorityTbody = document.getElementById('avail-priority-tbody');
+const availAlertPill = document.getElementById('avail-alert-pill');
+const availAlertToggle = document.getElementById('avail-alert-toggle');
+const availAlertHint = document.getElementById('avail-alert-hint');
+const availPhoneInput = document.getElementById('avail-phone-input');
+const availPhoneAddBtn = document.getElementById('avail-phone-add-btn');
+const availPhoneListEl = document.getElementById('avail-phone-list');
+const availEtapasTrigger = document.getElementById('avail-etapas-trigger');
+const availEtapasPanel = document.getElementById('avail-etapas-panel');
+const availEtapasListEl = document.getElementById('avail-etapas-list');
+const availMinutesChipsEl = document.getElementById('avail-minutes-chips');
+const availMinutesInput = document.getElementById('avail-minutes-input');
+const availPreviewEtapa = document.getElementById('avail-preview-etapa');
+const availPreviewTimeout = document.getElementById('avail-preview-timeout');
+const availPreviewTimeoutNote = document.getElementById('avail-preview-timeout-note');
+const availConfigStatus = document.getElementById('avail-config-status');
+const availConfigSaveBtn = document.getElementById('avail-config-save-btn');
+
+const availAssignOverlay = document.getElementById('avail-assign-overlay');
+const availAssignLeadName = document.getElementById('avail-assign-lead-name');
+const availAssignSelect = document.getElementById('avail-assign-select');
+const availAssignStatus = document.getElementById('avail-assign-status');
+const availAssignConfirmBtn = document.getElementById('avail-assign-confirm-btn');
 
 const inboxSearchInput = document.getElementById('inbox-search');
 const inboxCanalesTrigger = document.querySelector('.filter-trigger[data-filter="canales"]');
@@ -370,7 +507,18 @@ async function setSection(section) {
   const isDashboard = section === 'dashboard';
   const isProductos = section === 'productos';
   const isCatalogo = section === 'catalogo-ia';
-  const isPlaceholder = !isCanales && !isLeads && !isInbox && !isChannel && !isDashboard && !isProductos && !isCatalogo;
+  const isAutomatizacion = section === 'automatizacion';
+  const isDisponibilidad = section === 'disponibilidad';
+  const isPlaceholder =
+    !isCanales &&
+    !isLeads &&
+    !isInbox &&
+    !isChannel &&
+    !isDashboard &&
+    !isProductos &&
+    !isCatalogo &&
+    !isAutomatizacion &&
+    !isDisponibilidad;
 
   viewDashboard.hidden = !isDashboard;
   viewCanales.hidden = !isCanales;
@@ -379,6 +527,8 @@ async function setSection(section) {
   viewChannel.hidden = !isChannel;
   viewProductos.hidden = !isProductos;
   viewCatalogo.hidden = !isCatalogo;
+  viewAutomatizacion.hidden = !isAutomatizacion;
+  viewDisponibilidad.hidden = !isDisponibilidad;
   viewPlaceholder.hidden = !isPlaceholder;
   document.querySelector('[data-section-group="canales"]').hidden = !isCanales;
   document.querySelector('[data-section-group="leads"]').hidden = !isLeads;
@@ -398,6 +548,12 @@ async function setSection(section) {
   } else if (isCatalogo) {
     topbarTitle.textContent = 'Catálogo IA';
     await loadCatalogFiles();
+  } else if (isAutomatizacion) {
+    topbarTitle.textContent = 'Automatización';
+    await loadAutomations();
+  } else if (isDisponibilidad) {
+    topbarTitle.textContent = 'Disponibilidad';
+    await loadAvailability();
   } else if (section === 'bandeja-global') {
     topbarTitle.textContent = 'Bandeja Global';
     state.inboxVendorLock = null;
@@ -914,6 +1070,845 @@ async function analyzeCatalogPrompt(ev) {
   }
 }
 catalogAnalyzeForm?.addEventListener('submit', analyzeCatalogPrompt);
+
+// ── Motor de Automatizaciones ────────────────────────────────────────────────
+// Por ahora solo se guarda la DEFINICIÓN (plantilla + pasos) como borrador.
+// El motor que inscribe leads y envía los mensajes programados es una fase
+// futura (todavía no decidimos cómo se inscriben los leads ni qué canal envía).
+
+async function loadAutomations() {
+  automationsListEl.innerHTML = '<p class="muted">Cargando automatizaciones…</p>';
+  const { data, error } = await supabase.from('automations').select('*').order('created_at', { ascending: false });
+  if (error) {
+    console.error('Error cargando automatizaciones:', error.message);
+    automationsListEl.innerHTML = `<p class="muted">Error al cargar: ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  state.automations = data ?? [];
+  renderAutomationsList();
+}
+
+function renderAutomationsList() {
+  if (!state.automations.length) {
+    automationsListEl.innerHTML = `
+      <div class="products-empty">
+        <div class="products-empty-icon">🚀</div>
+        <p style="margin:0;">Crea tu primera automatización: di "webinar el domingo" y la IA te propone el plan.</p>
+      </div>`;
+    return;
+  }
+
+  const TEMP_LABELS = { CALIFICADO: 'Calientes', TIBIO: 'Tibios', FRIO: 'Fríos' };
+  const ETAPA_LABELS = { por_depositar: 'Por depositar', venta: 'Venta', perdido: 'Perdido' };
+
+  automationsListEl.innerHTML = state.automations
+    .map((a) => {
+      const steps = Array.isArray(a.steps) ? a.steps : [];
+      const temps = (a.audience_temperaturas ?? []).map((t) => TEMP_LABELS[t] ?? t);
+      const etapas = (a.audience_etapas ?? []).map((e) => ETAPA_LABELS[e] ?? e);
+      const audienceBits = [...temps, ...etapas];
+      const audienceLine = audienceBits.length ? `<p class="automation-card-steps">👥 ${audienceBits.join(', ')}</p>` : '';
+      return `
+        <div class="product-card" data-id="${a.id}">
+          <div class="automation-card-top">
+            <span class="product-card-name">${escapeHtml(a.name)}</span>
+            <button type="button" class="btn-icon product-card-delete" data-delete-automation="${a.id}" title="Eliminar" aria-label="Eliminar">🗑</button>
+          </div>
+          <span class="automation-card-badge${a.status === 'activa' ? ' is-active' : ''}">${escapeHtml(a.status || 'borrador')}</span>
+          <p class="automation-card-steps">${steps.length} paso${steps.length === 1 ? '' : 's'}${a.ignore_exit_on_conversion ? ' · ignora salida por conversión' : ''}</p>
+          ${audienceLine}
+        </div>`;
+    })
+    .join('');
+}
+
+automationsListEl?.addEventListener('click', async (ev) => {
+  const delBtn = ev.target.closest('[data-delete-automation]');
+  if (!delBtn) return;
+  const id = delBtn.dataset.deleteAutomation;
+  if (!confirm('¿Eliminar esta automatización?')) return;
+  const { error } = await supabase.from('automations').delete().eq('id', id);
+  if (error) {
+    alert(`Error al eliminar: ${error.message}`);
+    return;
+  }
+  state.automations = state.automations.filter((a) => a.id !== id);
+  renderAutomationsList();
+});
+
+// Paso 1: elegir plantilla ------------------------------------------------
+
+function openAutomationTemplatePicker() {
+  automationTemplateListEl.innerHTML = Object.entries(AUTOMATION_TEMPLATES)
+    .map(
+      ([key, t]) => `
+      <button type="button" class="automation-template-option" data-template-key="${key}">
+        <span class="automation-template-option-text">
+          <span class="automation-template-option-title">${escapeHtml(t.label)}</span>
+          <span class="automation-template-option-desc">${escapeHtml(t.description)}</span>
+        </span>
+        <span class="automation-template-option-chevron">›</span>
+      </button>`
+    )
+    .join('');
+  automationTemplateOverlay.hidden = false;
+}
+function closeAutomationTemplatePicker() {
+  automationTemplateOverlay.hidden = true;
+}
+automationNewBtn?.addEventListener('click', openAutomationTemplatePicker);
+document.getElementById('automation-template-modal-close')?.addEventListener('click', closeAutomationTemplatePicker);
+automationTemplateOverlay?.addEventListener('click', (ev) => {
+  if (ev.target === automationTemplateOverlay) closeAutomationTemplatePicker();
+});
+
+automationTemplateListEl?.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-template-key]');
+  if (!btn) return;
+  closeAutomationTemplatePicker();
+  openAutomationEditor(btn.dataset.templateKey);
+});
+automationScratchBtn?.addEventListener('click', () => {
+  closeAutomationTemplatePicker();
+  openAutomationEditor(null);
+});
+
+// Paso 2: ajustar el plan día a día ---------------------------------------
+
+function automationStepRowHtml(step) {
+  const { day = 1, title = '', hour = 10, message = '' } = step;
+  return `
+    <div class="automation-step">
+      <div class="automation-step-top">
+        <label class="automation-step-day">
+          Día
+          <input type="number" min="1" class="as-day" value="${day}" />
+        </label>
+        <input type="text" class="automation-step-title" placeholder="Título del paso" value="${escapeHtml(title)}" />
+        <label class="automation-step-hour">
+          🕐 <input type="number" min="0" max="23" class="as-hour" value="${hour}" /> h
+        </label>
+        <button type="button" class="btn-icon automation-step-remove" aria-label="Eliminar paso">✕</button>
+      </div>
+      <textarea class="automation-step-message" rows="2" placeholder="Mensaje…">${escapeHtml(message)}</textarea>
+    </div>`;
+}
+
+function addAutomationStepRow(step) {
+  automationStepsListEl.insertAdjacentHTML('beforeend', automationStepRowHtml(step));
+}
+
+automationStepsListEl?.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.automation-step-remove');
+  if (!btn) return;
+  btn.closest('.automation-step')?.remove();
+});
+automationAddStepBtn?.addEventListener('click', () => {
+  const rows = automationStepsListEl.querySelectorAll('.as-day');
+  const lastDay = rows.length ? Number(rows[rows.length - 1].value) || 1 : 0;
+  addAutomationStepRow({ day: lastDay + 1, title: '', hour: 10, message: '' });
+});
+
+function openAutomationEditor(templateKey) {
+  state.automationTemplateKey = templateKey;
+  const template = templateKey ? AUTOMATION_TEMPLATES[templateKey] : null;
+
+  automationEditorForm.reset();
+  automationEditorStatus.textContent = '';
+  automationEditorStatus.className = 'settings-status';
+  automationNameInput.value = template?.label ?? '';
+  automationStepsListEl.innerHTML = '';
+  (template?.steps ?? [{ day: 1, title: '', hour: 10, message: '' }]).forEach(addAutomationStepRow);
+
+  automationEditorOverlay.hidden = false;
+}
+function closeAutomationEditor() {
+  automationEditorOverlay.hidden = true;
+}
+document.getElementById('automation-editor-modal-close')?.addEventListener('click', closeAutomationEditor);
+automationEditorOverlay?.addEventListener('click', (ev) => {
+  if (ev.target === automationEditorOverlay) closeAutomationEditor();
+});
+automationBackBtn?.addEventListener('click', () => {
+  closeAutomationEditor();
+  openAutomationTemplatePicker();
+});
+
+function collectAutomationEditorData() {
+  const name = automationNameInput.value.trim();
+  if (!name) {
+    automationEditorStatus.textContent = 'El nombre del evento/objetivo es obligatorio.';
+    automationEditorStatus.className = 'settings-status err';
+    return null;
+  }
+
+  const steps = Array.from(automationStepsListEl.querySelectorAll('.automation-step')).map((row) => ({
+    day: Math.max(1, Number(row.querySelector('.as-day').value) || 1),
+    title: row.querySelector('.automation-step-title').value.trim(),
+    hour: Math.min(23, Math.max(0, Number(row.querySelector('.as-hour').value) || 0)),
+    message: row.querySelector('.automation-step-message').value.trim(),
+  }));
+
+  if (!steps.length) {
+    automationEditorStatus.textContent = 'Agrega al menos un paso.';
+    automationEditorStatus.className = 'settings-status err';
+    return null;
+  }
+
+  return {
+    name,
+    template: state.automationTemplateKey,
+    ignore_exit_on_conversion: automationIgnoreExitInput.checked,
+    steps,
+  };
+}
+
+function goToAudienceStep(ev) {
+  ev.preventDefault();
+  const data = collectAutomationEditorData();
+  if (!data) return;
+  state.automationPending = data;
+  closeAutomationEditor();
+  openAudienceStep();
+}
+automationEditorForm?.addEventListener('submit', goToAudienceStep);
+
+async function saveAutomationDraftFromEditor() {
+  const data = collectAutomationEditorData();
+  if (!data) return;
+
+  automationEditorStatus.textContent = 'Guardando borrador…';
+  automationEditorStatus.className = 'settings-status';
+
+  const { error } = await supabase.from('automations').insert({
+    ...data,
+    status: 'borrador',
+    audience_temperaturas: [],
+    audience_etapas: [],
+    audience_score_min: null,
+    audience_score_max: null,
+  });
+
+  if (error) {
+    automationEditorStatus.textContent = `Error: ${error.message}`;
+    automationEditorStatus.className = 'settings-status err';
+    return;
+  }
+
+  automationEditorStatus.textContent = 'Guardado como borrador ✓';
+  automationEditorStatus.className = 'settings-status ok';
+  await loadAutomations();
+  setTimeout(closeAutomationEditor, 500);
+}
+document.getElementById('automation-editor-save-draft-btn')?.addEventListener('click', saveAutomationDraftFromEditor);
+
+// Paso 3: aprobar la audiencia --------------------------------------------
+
+function openAudienceStep() {
+  audienceTempChipsEl.querySelectorAll('.chip').forEach((c) => c.classList.toggle('is-active', c.dataset.temp === 'CALIFICADO'));
+  audienceEtapaChipsEl.querySelectorAll('.chip').forEach((c) => c.classList.remove('is-active'));
+  audienceScoreMinInput.value = '';
+  audienceScoreMaxInput.value = '';
+  audiencePreviewResult.textContent = '';
+  automationAudienceStatus.textContent = '';
+  automationAudienceStatus.className = 'settings-status';
+  automationAudienceOverlay.hidden = false;
+}
+function closeAudienceStep() {
+  automationAudienceOverlay.hidden = true;
+  state.automationPending = null;
+}
+document.getElementById('automation-audience-modal-close')?.addEventListener('click', closeAudienceStep);
+automationAudienceOverlay?.addEventListener('click', (ev) => {
+  if (ev.target === automationAudienceOverlay) closeAudienceStep();
+});
+
+audienceTempChipsEl?.addEventListener('click', (ev) => {
+  const chip = ev.target.closest('.chip');
+  if (!chip) return;
+  chip.classList.toggle('is-active');
+});
+audienceEtapaChipsEl?.addEventListener('click', (ev) => {
+  const chip = ev.target.closest('.chip');
+  if (!chip) return;
+  chip.classList.toggle('is-active');
+});
+
+function selectedAudienceTemps() {
+  return Array.from(audienceTempChipsEl.querySelectorAll('.chip.is-active')).map((c) => c.dataset.temp);
+}
+function selectedAudienceEtapas() {
+  return Array.from(audienceEtapaChipsEl.querySelectorAll('.chip.is-active')).map((c) => c.dataset.etapa);
+}
+
+// PostgREST or() con un grupo and() anidado: el rango de score solo aplica a
+// la rama de temperatura (label) — las etapas post-conversión no manejan score.
+function buildAudienceOrFilter(temps, etapas, min, max) {
+  const parts = [];
+  if (temps.length) {
+    const scoreClauses = [];
+    if (min !== null) scoreClauses.push(`score.gte.${min}`);
+    if (max !== null) scoreClauses.push(`score.lte.${max}`);
+    const labelClause = `label.in.(${temps.join(',')})`;
+    parts.push(scoreClauses.length ? `and(${labelClause},${scoreClauses.join(',')})` : labelClause);
+  }
+  if (etapas.length) {
+    parts.push(`etapa.in.(${etapas.join(',')})`);
+  }
+  return parts.join(',');
+}
+
+async function previewAudience() {
+  const temps = selectedAudienceTemps();
+  const etapas = selectedAudienceEtapas();
+  const min = audienceScoreMinInput.value === '' ? null : Number(audienceScoreMinInput.value);
+  const max = audienceScoreMaxInput.value === '' ? null : Number(audienceScoreMaxInput.value);
+
+  if (!temps.length && !etapas.length) {
+    audiencePreviewResult.textContent = 'Selecciona al menos una temperatura o etapa.';
+    return;
+  }
+
+  audiencePreviewResult.textContent = 'Calculando…';
+  const orFilter = buildAudienceOrFilter(temps, etapas, min, max);
+  const { count, error } = await supabase.from('prospects').select('id', { count: 'exact', head: true }).or(orFilter);
+
+  if (error) {
+    audiencePreviewResult.textContent = `Error: ${error.message}`;
+    return;
+  }
+  audiencePreviewResult.textContent = `👥 ${count ?? 0} lead${count === 1 ? '' : 's'} coinciden con estos criterios.`;
+}
+audiencePreviewBtn?.addEventListener('click', previewAudience);
+
+async function saveAutomation(status) {
+  if (!state.automationPending) return;
+
+  automationAudienceStatus.textContent = status === 'activa' ? 'Activando…' : 'Guardando…';
+  automationAudienceStatus.className = 'settings-status';
+
+  const min = audienceScoreMinInput.value === '' ? null : Number(audienceScoreMinInput.value);
+  const max = audienceScoreMaxInput.value === '' ? null : Number(audienceScoreMaxInput.value);
+
+  const { error } = await supabase.from('automations').insert({
+    ...state.automationPending,
+    status,
+    audience_temperaturas: selectedAudienceTemps(),
+    audience_etapas: selectedAudienceEtapas(),
+    audience_score_min: min,
+    audience_score_max: max,
+  });
+
+  if (error) {
+    automationAudienceStatus.textContent = `Error: ${error.message}`;
+    automationAudienceStatus.className = 'settings-status err';
+    return;
+  }
+
+  automationAudienceStatus.textContent = status === 'activa' ? 'Automatización activada ✓' : 'Guardada como borrador ✓';
+  automationAudienceStatus.className = 'settings-status ok';
+  state.automationPending = null;
+  await loadAutomations();
+  setTimeout(() => (automationAudienceOverlay.hidden = true), 600);
+}
+automationSaveDraftBtn?.addEventListener('click', () => saveAutomation('borrador'));
+automationActivateBtn?.addEventListener('click', () => saveAutomation('activa'));
+
+// ── Disponibilidad del equipo ────────────────────────────────────────────────
+// El estado por vendedor es real (se cambia acá mismo y queda loggeado en
+// agent_status_log para las métricas de tiempo). Lo que NO está construido
+// todavía son los dos motores automáticos: repartir leads solos
+// ("Asignación inteligente") y enviar el WhatsApp de "Alerta de respuesta" —
+// ambas pantallas de Config solo guardan su configuración por ahora.
+
+const fmtRelativeTime = (iso) => {
+  if (!iso) return '';
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return 'Justo ahora';
+  if (mins < 60) return `Hace ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Hace ${hours} h`;
+  return `Hace ${Math.floor(hours / 24)} d`;
+};
+
+function closeAllAvailDropdowns(except) {
+  document.querySelectorAll('#view-disponibilidad .filter-panel, #view-disponibilidad .avail-status-panel').forEach((p) => {
+    if (p !== except) p.hidden = true;
+  });
+}
+document.addEventListener('click', (ev) => {
+  if (!ev.target.closest('#view-disponibilidad .filter-dropdown, #view-disponibilidad .avail-status-dropdown')) {
+    closeAllAvailDropdowns();
+  }
+});
+
+function setAvailTab(tab) {
+  state.availTab = tab;
+  availTabsEl.querySelectorAll('.chip').forEach((c) => c.classList.toggle('is-active', c.dataset.availTab === tab));
+  Object.entries(availPanels).forEach(([key, el]) => (el.hidden = key !== tab));
+}
+availTabsEl?.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('.chip[data-avail-tab]');
+  if (!btn) return;
+  setAvailTab(btn.dataset.availTab);
+  if (btn.dataset.availTab === 'kpis') await loadAvailKpis();
+  else if (btn.dataset.availTab === 'config') await loadAvailConfig();
+  else if (btn.dataset.availTab === 'cola') await loadAvailCola();
+});
+
+async function loadAvailability() {
+  await loadAgents();
+  renderAvailTiempoReal();
+  await loadAvailCola();
+  setAvailTab(state.availTab);
+  if (state.availTab === 'kpis') await loadAvailKpis();
+  else if (state.availTab === 'config') await loadAvailConfig();
+}
+
+// Tab: Tiempo real -----------------------------------------------------------
+
+function renderAvailTiempoReal() {
+  const counts = Object.fromEntries(AGENT_STATUS_ORDER.map((s) => [s, 0]));
+  state.agents.forEach((a) => (counts[a.status] = (counts[a.status] ?? 0) + 1));
+
+  availStatusKpisEl.innerHTML = AGENT_STATUS_ORDER.map((s) => {
+    const meta = AGENT_STATUS_META[s];
+    return `
+      <div class="avail-status-kpi">
+        <div class="avail-status-kpi-top">
+          <span class="avail-status-kpi-dot" style="background:var(--${meta.color})"></span>
+          <span class="avail-status-kpi-value">${counts[s]}</span>
+        </div>
+        <span class="avail-status-kpi-label">${escapeHtml(meta.label)}</span>
+      </div>`;
+  }).join('');
+
+  if (!state.agents.length) {
+    availAgentCardsEl.innerHTML = '<p class="muted">No hay vendedores creados todavía. Créalos desde Canales → Crear vendedor.</p>';
+    return;
+  }
+
+  availAgentCardsEl.innerHTML = state.agents
+    .map((a) => {
+      const meta = AGENT_STATUS_META[a.status] ?? AGENT_STATUS_META.fuera_de_atencion;
+      return `
+        <div class="product-card avail-agent-card" data-agent-id="${a.id}">
+          <div class="avail-agent-card-top">
+            <div class="avail-agent-identity">
+              <span class="avatar" style="background:${colorFor(a.id)}">${initials(a.name)}</span>
+              <span class="product-card-name">${escapeHtml(a.name)}</span>
+            </div>
+          </div>
+          <div class="avail-status-dropdown">
+            <button type="button" class="avail-status-trigger" data-agent-id="${a.id}">${meta.icon} ${escapeHtml(meta.label)} ▾</button>
+            <div class="avail-status-panel" data-agent-id="${a.id}" hidden>
+              ${AGENT_STATUS_ORDER.map(
+                (s) =>
+                  `<button type="button" class="avail-status-option" data-agent-id="${a.id}" data-status="${s}">${AGENT_STATUS_META[s].icon} ${escapeHtml(AGENT_STATUS_META[s].label)}</button>`
+              ).join('')}
+            </div>
+          </div>
+          <span class="avail-agent-updated">${fmtRelativeTime(a.status_updated_at)}</span>
+        </div>`;
+    })
+    .join('');
+}
+
+availAgentCardsEl?.addEventListener('click', async (ev) => {
+  const trigger = ev.target.closest('.avail-status-trigger');
+  if (trigger) {
+    const panel = availAgentCardsEl.querySelector(`.avail-status-panel[data-agent-id="${trigger.dataset.agentId}"]`);
+    const willOpen = panel.hidden;
+    closeAllAvailDropdowns();
+    panel.hidden = !willOpen;
+    return;
+  }
+  const option = ev.target.closest('.avail-status-option');
+  if (option) {
+    closeAllAvailDropdowns();
+    await setAgentStatus(option.dataset.agentId, option.dataset.status);
+  }
+});
+
+async function setAgentStatus(agentId, status) {
+  const now = new Date().toISOString();
+  await supabase.from('agent_status_log').update({ ended_at: now }).eq('agent_id', agentId).is('ended_at', null);
+  const { error: logError } = await supabase.from('agent_status_log').insert({ agent_id: agentId, status, started_at: now });
+  const { error } = await supabase.from('agents').update({ status, status_updated_at: now }).eq('id', agentId);
+  if (logError || error) {
+    alert(`Error al cambiar estado: ${(error || logError).message}`);
+    return;
+  }
+  const agent = state.agents.find((a) => a.id === agentId);
+  if (agent) {
+    agent.status = status;
+    agent.status_updated_at = now;
+  }
+  renderAvailTiempoReal();
+  if (state.availTab === 'config') renderAvailPriorityTable();
+}
+
+// Tab: Cola de emergencia -----------------------------------------------------
+
+async function loadAvailCola() {
+  const { data, error } = await supabase
+    .from('prospect_inbox')
+    .select('id, nombre, phone, created_at, effective_agent_id')
+    .is('effective_agent_id', null)
+    .order('created_at', { ascending: true });
+
+  state.availColaRows = error ? [] : data ?? [];
+  if (error) console.error('Error cargando cola de emergencia:', error.message);
+
+  const count = state.availColaRows.length;
+  availQueueBadge.hidden = count === 0;
+  availQueueCount.textContent = count;
+  availQueueWord.textContent = count === 1 ? 'lead' : 'leads';
+  availTabColaBadge.hidden = count === 0;
+  availTabColaBadge.textContent = count;
+
+  renderAvailCola();
+}
+
+function renderAvailCola() {
+  const rows = state.availColaRows;
+  if (!rows.length) {
+    availColaBanner.hidden = true;
+    availColaListEl.innerHTML = '<p class="muted">No hay leads esperando asignación manual 🎉</p>';
+    return;
+  }
+  availColaBanner.hidden = false;
+  availColaBanner.textContent = `⚠️ ${rows.length} lead${rows.length === 1 ? '' : 's'} esperando asignación manual`;
+  availColaListEl.innerHTML = rows
+    .map((p) => {
+      const waitMin = Math.max(0, Math.round((Date.now() - new Date(p.created_at).getTime()) / 60000));
+      return `
+        <div class="avail-cola-row" data-id="${p.id}">
+          <span class="avail-cola-icon">⚠️</span>
+          <div class="avail-cola-info">
+            <div class="avail-cola-name">${escapeHtml(p.nombre || 'Sin nombre')}</div>
+            <div class="avail-cola-phone">${escapeHtml(p.phone)}</div>
+          </div>
+          <span class="avail-cola-wait">Esperando ${waitMin} min</span>
+          <button type="button" class="btn btn-primary" data-assign-prospect="${p.id}">🤝 Asignar</button>
+        </div>`;
+    })
+    .join('');
+}
+
+availColaListEl?.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-assign-prospect]');
+  if (!btn) return;
+  const row = state.availColaRows.find((p) => p.id === btn.dataset.assignProspect);
+  state.availAssigningProspectId = btn.dataset.assignProspect;
+  availAssignLeadName.textContent = row ? `Asignando a: ${row.nombre || row.phone}` : '';
+  availAssignSelect.innerHTML = state.agents.map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+  availAssignStatus.textContent = '';
+  availAssignStatus.className = 'settings-status';
+  availAssignOverlay.hidden = false;
+});
+document.getElementById('avail-assign-modal-close')?.addEventListener('click', () => (availAssignOverlay.hidden = true));
+availAssignOverlay?.addEventListener('click', (ev) => {
+  if (ev.target === availAssignOverlay) availAssignOverlay.hidden = true;
+});
+availAssignConfirmBtn?.addEventListener('click', async () => {
+  const prospectId = state.availAssigningProspectId;
+  const agentId = availAssignSelect.value;
+  if (!prospectId || !agentId) return;
+  availAssignStatus.textContent = 'Asignando…';
+  availAssignStatus.className = 'settings-status';
+  const { error } = await supabase.from('prospects').update({ handled_by_agent_id: agentId }).eq('id', prospectId);
+  if (error) {
+    availAssignStatus.textContent = `Error: ${error.message}`;
+    availAssignStatus.className = 'settings-status err';
+    return;
+  }
+  availAssignStatus.textContent = 'Lead asignado ✓';
+  availAssignStatus.className = 'settings-status ok';
+  await loadAvailCola();
+  setTimeout(() => (availAssignOverlay.hidden = true), 500);
+});
+
+// Tab: KPIs --------------------------------------------------------------------
+
+availRangeTrigger?.addEventListener('click', () => {
+  const willOpen = availRangePanel.hidden;
+  closeAllAvailDropdowns();
+  availRangePanel.hidden = !willOpen;
+});
+availRangePanel?.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('.avail-range-option');
+  if (!btn) return;
+  state.availRangeDays = Number(btn.dataset.days);
+  availRangeLabel.textContent = btn.textContent;
+  availRangePanel.hidden = true;
+  await loadAvailKpis();
+});
+
+function availKpiCard(icon, label, value) {
+  return `
+    <div class="avail-kpi-card">
+      <div class="avail-kpi-card-label">${icon} ${escapeHtml(label)}</div>
+      <div class="avail-kpi-card-value">${escapeHtml(value)}</div>
+    </div>`;
+}
+
+async function loadAvailKpis() {
+  availAgentCountEl.textContent = state.agents.length;
+  const rangeEnd = new Date();
+  const rangeStart = new Date(rangeEnd.getTime() - state.availRangeDays * 86400000);
+
+  const [{ data: logs, error: logsError }, { data: inboxRows, error: inboxError }] = await Promise.all([
+    supabase
+      .from('agent_status_log')
+      .select('agent_id, status, started_at, ended_at')
+      .lt('started_at', rangeEnd.toISOString())
+      .or(`ended_at.is.null,ended_at.gte.${rangeStart.toISOString()}`),
+    supabase
+      .from('prospect_inbox')
+      .select('id, effective_agent_id, created_at')
+      .gte('created_at', rangeStart.toISOString())
+      .lte('created_at', rangeEnd.toISOString()),
+  ]);
+  if (logsError) console.error('Error cargando agent_status_log:', logsError.message);
+  if (inboxError) console.error('Error cargando leads del rango:', inboxError.message);
+
+  const perAgentTime = {};
+  const totals = Object.fromEntries(AGENT_STATUS_ORDER.map((s) => [s, 0]));
+  (logs ?? []).forEach((log) => {
+    const start = Math.max(new Date(log.started_at).getTime(), rangeStart.getTime());
+    const end = Math.min(log.ended_at ? new Date(log.ended_at).getTime() : Date.now(), rangeEnd.getTime());
+    if (end <= start) return;
+    const minutes = (end - start) / 60000;
+    totals[log.status] = (totals[log.status] ?? 0) + minutes;
+    perAgentTime[log.agent_id] = perAgentTime[log.agent_id] ?? Object.fromEntries(AGENT_STATUS_ORDER.map((s) => [s, 0]));
+    perAgentTime[log.agent_id][log.status] += minutes;
+  });
+
+  const perAgentLeads = {};
+  (inboxRows ?? []).forEach((r) => {
+    if (!r.effective_agent_id) return;
+    perAgentLeads[r.effective_agent_id] = (perAgentLeads[r.effective_agent_id] ?? 0) + 1;
+  });
+
+  const fmtMin = (m) => `${Math.round(m)} min`;
+
+  availKpiGridEl.innerHTML = [
+    availKpiCard('⚡', 'Tiempo listo', fmtMin(totals.listo)),
+    availKpiCard('🎧', 'Tiempo atendiendo', fmtMin(totals.atendiendo)),
+    availKpiCard('☕', 'Tiempo en pausa', fmtMin(totals.pausa)),
+    availKpiCard('🌙', 'Tiempo fuera', fmtMin(totals.fuera_de_atencion)),
+    availKpiCard('⛔', 'Tiempo inactivo', fmtMin(totals.inactivo_sistema)),
+    availKpiCard('👥', 'Leads ingresados', String((inboxRows ?? []).length)),
+    availKpiCard('🤖', 'Ofrecidos por IA', '0'),
+    availKpiCard('✅', 'Leads aceptados', '0'),
+    availKpiCard('❌', 'Leads rechazados', '0'),
+    availKpiCard('🔄', 'Leads reasignados', '0'),
+    availKpiCard('⏱', 'Tiempo promedio de respuesta', '—'),
+    availKpiCard('📞', 'Tasa de contacto', '—'),
+    availKpiCard('📈', 'Tasa de conversión', '—'),
+    availKpiCard('📊', 'Disponibilidad productiva', '—'),
+  ].join('');
+
+  availDetailTbody.innerHTML =
+    state.agents
+      .map((a) => {
+        const t = perAgentTime[a.id] ?? Object.fromEntries(AGENT_STATUS_ORDER.map((s) => [s, 0]));
+        return `
+          <tr>
+            <td>${escapeHtml(a.name)}</td>
+            <td>${fmtMin(t.listo)}</td>
+            <td>${fmtMin(t.atendiendo)}</td>
+            <td>${perAgentLeads[a.id] ?? 0}</td>
+            <td>0</td>
+            <td>0</td>
+            <td>—</td>
+            <td>—</td>
+          </tr>`;
+      })
+      .join('') || `<tr class="empty-row"><td colspan="8">No hay vendedores creados todavía.</td></tr>`;
+}
+
+// Tab: Config ------------------------------------------------------------------
+
+function renderAvailPriorityTable() {
+  availPriorityTbody.innerHTML =
+    state.agents
+      .map((a) => {
+        const meta = AGENT_STATUS_META[a.status] ?? AGENT_STATUS_META.fuera_de_atencion;
+        return `
+          <tr data-agent-id="${a.id}">
+            <td>${escapeHtml(a.name)}</td>
+            <td><span class="status-pill ${meta.color === 'ok' ? 'is-on' : meta.color === 'off' ? '' : 'is-' + meta.color}">${meta.icon} ${escapeHtml(meta.label)}</span></td>
+            <td>
+              <span class="avail-priority-stepper">
+                <button type="button" data-priority-step="-1" data-agent-id="${a.id}">−</button>
+                <span>${a.priority}</span>
+                <button type="button" data-priority-step="1" data-agent-id="${a.id}">+</button>
+              </span>
+            </td>
+          </tr>`;
+      })
+      .join('') || `<tr class="empty-row"><td colspan="3">No hay vendedores creados todavía.</td></tr>`;
+}
+availPriorityTbody?.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('[data-priority-step]');
+  if (!btn) return;
+  const agent = state.agents.find((a) => a.id === btn.dataset.agentId);
+  if (!agent) return;
+  const next = Math.min(10, Math.max(1, agent.priority + Number(btn.dataset.priorityStep)));
+  if (next === agent.priority) return;
+  agent.priority = next;
+  renderAvailPriorityTable();
+  const { error } = await supabase.from('agents').update({ priority: next }).eq('id', agent.id);
+  if (error) console.error('Error guardando prioridad:', error.message);
+});
+
+function updateAlertPillAndHint() {
+  const on = availAlertToggle.checked;
+  availAlertPill.textContent = on ? 'Activa' : 'Inactiva';
+  availAlertPill.classList.toggle('is-on', on);
+  availAlertHint.hidden = on;
+}
+availAlertToggle?.addEventListener('change', updateAlertPillAndHint);
+
+function renderAvailPhoneList() {
+  availPhoneListEl.innerHTML =
+    state.availAlertPhones
+      .map((phone) => `<span class="avail-phone-chip">${escapeHtml(phone)}<button type="button" data-remove-phone="${escapeHtml(phone)}" aria-label="Quitar">✕</button></span>`)
+      .join('') || '<p class="muted" style="margin:0;">Sin números agregados.</p>';
+}
+availPhoneAddBtn?.addEventListener('click', () => {
+  const digits = availPhoneInput.value.replace(/\D/g, '');
+  if (digits.length < 8 || digits.length > 15) {
+    alert('El número debe tener entre 8 y 15 dígitos, incluyendo el código de país.');
+    return;
+  }
+  if (!state.availAlertPhones.includes(digits)) state.availAlertPhones.push(digits);
+  availPhoneInput.value = '';
+  renderAvailPhoneList();
+});
+availPhoneListEl?.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-remove-phone]');
+  if (!btn) return;
+  state.availAlertPhones = state.availAlertPhones.filter((p) => p !== btn.dataset.removePhone);
+  renderAvailPhoneList();
+});
+
+function updateEtapasTriggerLabel() {
+  const labels = state.availAlertEtapas.map((k) => AVAIL_ETAPA_META[k]).filter(Boolean);
+  availEtapasTrigger.innerHTML = `${labels.length ? escapeHtml(labels.join(', ')) : 'Seleccionar etapas…'} <span class="filter-caret">▾</span>`;
+}
+function renderAvailEtapasList() {
+  availEtapasListEl.innerHTML = Object.entries(AVAIL_ETAPA_META)
+    .map(
+      ([key, label]) =>
+        `<label class="filter-option"><input type="checkbox" value="${key}" ${state.availAlertEtapas.includes(key) ? 'checked' : ''} /> ${escapeHtml(label)}</label>`
+    )
+    .join('');
+  updateEtapasTriggerLabel();
+}
+availEtapasTrigger?.addEventListener('click', () => {
+  const willOpen = availEtapasPanel.hidden;
+  closeAllAvailDropdowns();
+  availEtapasPanel.hidden = !willOpen;
+});
+availEtapasListEl?.addEventListener('change', (ev) => {
+  const cb = ev.target.closest('input[type="checkbox"]');
+  if (!cb) return;
+  if (cb.checked) {
+    if (!state.availAlertEtapas.includes(cb.value)) state.availAlertEtapas.push(cb.value);
+  } else {
+    state.availAlertEtapas = state.availAlertEtapas.filter((v) => v !== cb.value);
+  }
+  updateEtapasTriggerLabel();
+  renderAvailPreview();
+});
+
+function syncMinutesChips(value) {
+  availMinutesChipsEl.querySelectorAll('.chip').forEach((c) => c.classList.toggle('is-active', Number(c.dataset.minutes) === Number(value)));
+}
+availMinutesChipsEl?.addEventListener('click', (ev) => {
+  const chip = ev.target.closest('.chip[data-minutes]');
+  if (!chip) return;
+  availMinutesInput.value = chip.dataset.minutes;
+  syncMinutesChips(chip.dataset.minutes);
+  renderAvailPreview();
+});
+availMinutesInput?.addEventListener('input', () => {
+  syncMinutesChips(availMinutesInput.value);
+  renderAvailPreview();
+});
+
+function renderAvailPreview() {
+  if (state.availAlertEtapas.length) {
+    const labels = state.availAlertEtapas.map((k) => AVAIL_ETAPA_META[k]).filter(Boolean).join(', ');
+    availPreviewEtapa.textContent = `🔔 Juan Pérez entró a la etapa "${labels}" en el canal ventas-wsp (vendedor: Karin Goicochea).`;
+  } else {
+    availPreviewEtapa.textContent = 'Selecciona al menos una etapa para ver el aviso que se enviará cuando un lead llegue a ella.';
+  }
+  const minutes = Math.min(1440, Math.max(1, Number(availMinutesInput.value) || 15));
+  availPreviewTimeout.textContent = `⚠️ Lead sin responder: Juan Pérez en el canal ventas-wsp lleva ${minutes} min sin respuesta.`;
+  availPreviewTimeoutNote.textContent = `Se enviará cuando un lead supere ${minutes} min sin respuesta.`;
+}
+
+async function loadAvailConfig() {
+  const { data, error } = await supabase.from('availability_settings').select('*').eq('id', 'default').maybeSingle();
+  if (error) console.error('Error cargando availability_settings:', error.message);
+
+  state.availSettings = data ?? {
+    smart_assignment_enabled: false,
+    alert_enabled: false,
+    alert_phones: [],
+    alert_etapas: [],
+    alert_minutes: 15,
+  };
+  state.availAlertPhones = [...(state.availSettings.alert_phones ?? [])];
+  state.availAlertEtapas = [...(state.availSettings.alert_etapas ?? [])];
+
+  availSmartToggle.checked = state.availSettings.smart_assignment_enabled;
+  availAlertToggle.checked = state.availSettings.alert_enabled;
+  updateAlertPillAndHint();
+  renderAvailPhoneList();
+  renderAvailEtapasList();
+  availMinutesInput.value = state.availSettings.alert_minutes;
+  syncMinutesChips(state.availSettings.alert_minutes);
+  renderAvailPreview();
+  renderAvailPriorityTable();
+
+  availConfigStatus.textContent = '';
+  availConfigStatus.className = 'settings-status';
+}
+
+availSmartToggle?.addEventListener('change', async () => {
+  const { error } = await supabase
+    .from('availability_settings')
+    .update({ smart_assignment_enabled: availSmartToggle.checked })
+    .eq('id', 'default');
+  if (error) alert(`Error al guardar: ${error.message}`);
+});
+
+availConfigSaveBtn?.addEventListener('click', async () => {
+  const minutes = Math.min(1440, Math.max(1, Number(availMinutesInput.value) || 15));
+  availConfigStatus.textContent = 'Guardando…';
+  availConfigStatus.className = 'settings-status';
+  const { error } = await supabase
+    .from('availability_settings')
+    .update({
+      alert_enabled: availAlertToggle.checked,
+      alert_phones: state.availAlertPhones,
+      alert_etapas: state.availAlertEtapas,
+      alert_minutes: minutes,
+    })
+    .eq('id', 'default');
+  if (error) {
+    availConfigStatus.textContent = `Error: ${error.message}`;
+    availConfigStatus.className = 'settings-status err';
+    return;
+  }
+  availConfigStatus.textContent = 'Configuración guardada ✓';
+  availConfigStatus.className = 'settings-status ok';
+});
 
 async function loadProspects() {
   if (!state.vendorId) return;
@@ -2922,7 +3917,20 @@ async function saveSettings(ev) {
 
 // ── Agregar canal ────────────────────────────────────────────────────────────
 
-async function createVendorEvolution(fd, name, system_prompt) {
+const DEFAULT_AI_MODEL = {
+  anthropic: 'claude-sonnet-4-6',
+  openai: 'gpt-4o',
+  google: 'gemini-2.0-flash',
+};
+
+function readAiConfig(fd) {
+  const ai_provider = fd.get('ai_provider')?.toString().trim() || '';
+  const ai_api_key = fd.get('ai_api_key')?.toString().trim() || '';
+  if (!ai_provider) return {};
+  return { ai_provider, ai_api_key, ai_model: DEFAULT_AI_MODEL[ai_provider] };
+}
+
+async function createVendorEvolution(fd, name) {
   const phone_number = fd.get('phone_number')?.toString().trim() || null;
   const evolution_instance_id = fd.get('evolution_instance_id')?.toString().trim();
 
@@ -2935,14 +3943,14 @@ async function createVendorEvolution(fd, name, system_prompt) {
     phone_number,
     channel_type: 'evolution',
     evolution_instance_id,
-    system_prompt,
     ai_api_key: '',
+    ...readAiConfig(fd),
   });
 
   if (error) throw new Error(error.message);
 }
 
-async function createVendorMeta(fd, name, system_prompt) {
+async function createVendorMeta(fd, name) {
   const phone_number = fd.get('meta_phone_number')?.toString().trim() || null;
   const phone_number_id = fd.get('meta_phone_number_id')?.toString().trim();
   const waba_id = fd.get('meta_waba_id')?.toString().trim();
@@ -2964,7 +3972,7 @@ async function createVendorMeta(fd, name, system_prompt) {
       phone_number_id,
       waba_id,
       vendor_name: name,
-      system_prompt: system_prompt || undefined,
+      ...readAiConfig(fd),
     }),
   });
   const json = await resp.json();
@@ -2980,7 +3988,6 @@ async function createVendor(ev) {
   ev.preventDefault();
   const fd = new FormData(vendorForm);
   const name = fd.get('name')?.toString().trim();
-  const system_prompt = fd.get('system_prompt')?.toString().trim() || null;
   const isMeta = vendorConnectionType.value === 'meta';
 
   if (!name) {
@@ -2994,9 +4001,9 @@ async function createVendor(ev) {
 
   try {
     if (isMeta) {
-      await createVendorMeta(fd, name, system_prompt);
+      await createVendorMeta(fd, name);
     } else {
-      await createVendorEvolution(fd, name, system_prompt);
+      await createVendorEvolution(fd, name);
     }
   } catch (err) {
     vendorStatus.textContent = `Error: ${err.message}`;
@@ -3184,6 +4191,10 @@ document.addEventListener('keydown', (ev) => {
   if (!autofillOverlay.hidden) closeAutofillModal();
   if (!catalogOverlay.hidden) closeCatalogModal();
   if (!catalogAnalyzeOverlay.hidden) closeCatalogAnalyzeModal();
+  if (!automationTemplateOverlay.hidden) closeAutomationTemplatePicker();
+  if (!automationEditorOverlay.hidden) closeAutomationEditor();
+  if (!automationAudienceOverlay.hidden) closeAudienceStep();
+  if (!availAssignOverlay.hidden) availAssignOverlay.hidden = true;
 });
 
 // ── Init ─────────────────────────────────────────────────────────────────────

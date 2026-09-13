@@ -140,6 +140,174 @@
         </div>
       </section>
 
+      <!-- ═══ Vista: Motor de Automatizaciones ═══════════════════════════ -->
+      <section id="view-automatizacion" class="view" hidden>
+        <div class="page-heading-row">
+          <div>
+            <h3>Motor de Automatizaciones</h3>
+            <p class="muted">Automatizaciones multi-día que se pausan solas cuando el cliente responde.</p>
+          </div>
+          <button id="automation-new-btn" class="btn btn-primary" type="button">＋ Nueva automatización</button>
+        </div>
+
+        <div id="automations-list" class="products-grid">
+          <p class="muted">Cargando automatizaciones…</p>
+        </div>
+      </section>
+
+      <!-- ═══ Vista: Disponibilidad del equipo ═══════════════════════════ -->
+      <section id="view-disponibilidad" class="view" hidden>
+        <div class="page-heading-row">
+          <div>
+            <h3>Disponibilidad del equipo</h3>
+            <p class="muted">Monitoreo en tiempo real de la disponibilidad de tu equipo comercial</p>
+          </div>
+          <span id="avail-queue-badge" class="avail-queue-badge" hidden>⚠️ <span id="avail-queue-count">0</span> <span id="avail-queue-word">leads</span> en cola</span>
+        </div>
+
+        <div class="filters avail-tabs" id="avail-tabs">
+          <button class="chip is-active" data-avail-tab="tiempo-real" type="button">📶 Tiempo real</button>
+          <button class="chip" data-avail-tab="kpis" type="button">📊 KPIs</button>
+          <button class="chip" data-avail-tab="cola" type="button">⚠️ Cola de emergencia <span id="avail-tab-cola-badge" class="avail-tab-badge" hidden>0</span></button>
+          <button class="chip" data-avail-tab="config" type="button">⚙️ Config.</button>
+        </div>
+
+        <!-- Tab: Tiempo real -->
+        <div class="avail-panel" id="avail-panel-tiempo-real">
+          <div class="avail-status-kpis" id="avail-status-kpis"></div>
+          <div class="products-grid" id="avail-agent-cards"></div>
+        </div>
+
+        <!-- Tab: KPIs -->
+        <div class="avail-panel" id="avail-panel-kpis" hidden>
+          <div class="avail-kpis-toolbar">
+            <div class="filter-dropdown" id="avail-range-dropdown">
+              <button type="button" class="filter-trigger" id="avail-range-trigger">📅 <span id="avail-range-label">Últimos 7 días</span> <span class="filter-caret">▾</span></button>
+              <div class="filter-panel" id="avail-range-panel" hidden>
+                <div class="filter-panel-list">
+                  <button type="button" class="avail-range-option" data-days="7">Últimos 7 días</button>
+                  <button type="button" class="avail-range-option" data-days="14">Últimos 14 días</button>
+                  <button type="button" class="avail-range-option" data-days="30">Últimos 30 días</button>
+                  <button type="button" class="avail-range-option" data-days="90">Últimos 90 días</button>
+                </div>
+              </div>
+            </div>
+            <span class="avail-team-pill">👥 Totales acumulados del equipo · <span id="avail-agent-count">0</span> asesores</span>
+          </div>
+
+          <div class="avail-kpi-grid" id="avail-kpi-grid"></div>
+
+          <h4 class="section-title" style="margin-top:18px;">Detalle por asesor</h4>
+          <div class="table-wrap">
+            <table id="avail-detail-table">
+              <thead>
+                <tr>
+                  <th>Asesor</th><th>T. Listo</th><th>T. Atendiendo</th><th>Leads ingresados</th>
+                  <th>Ofrecidos IA</th><th>Aceptados</th><th>Tasa contacto</th><th>Conversión</th>
+                </tr>
+              </thead>
+              <tbody id="avail-detail-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab: Cola de emergencia -->
+        <div class="avail-panel" id="avail-panel-cola" hidden>
+          <div class="avail-cola-banner" id="avail-cola-banner" hidden></div>
+          <div id="avail-cola-list"></div>
+        </div>
+
+        <!-- Tab: Config -->
+        <div class="avail-panel" id="avail-panel-config" hidden>
+          <div class="avail-config-card">
+            <div class="avail-config-card-row">
+              <div class="avail-config-card-icon">✨</div>
+              <div class="avail-config-card-text">
+                <strong>Asignación inteligente</strong>
+                <p class="muted">Los leads se asignan y reasignan solos, con ranking ponderado por prioridad, capacidad y rendimiento del vendedor.</p>
+              </div>
+              <span class="switch"><input type="checkbox" id="avail-smart-toggle" /><span class="switch-track"></span></span>
+            </div>
+          </div>
+
+          <h4 class="section-title" style="margin-top:18px;">Prioridad de asignación</h4>
+          <p class="muted" style="margin-top:-8px;">Los vendedores con mayor prioridad reciben más leads cuando la asignación inteligente está activa. Rango 1 (bajo) a 10 (alto).</p>
+          <div class="table-wrap">
+            <table id="avail-priority-table">
+              <thead><tr><th>Vendedor</th><th>Estado actual</th><th>Prioridad</th></tr></thead>
+              <tbody id="avail-priority-tbody"></tbody>
+            </table>
+          </div>
+
+          <h4 class="section-title" style="margin-top:18px;">Alerta de respuesta</h4>
+          <div class="avail-config-card">
+            <div class="avail-config-card-row">
+              <div class="avail-config-card-icon">🔔</div>
+              <div class="avail-config-card-text">
+                <strong>Alerta de respuesta <span id="avail-alert-pill" class="status-pill">Inactiva</span></strong>
+                <p class="muted">Envía un WhatsApp desde el mismo canal del lead a los números que elijas: cuando un lead entra a una etapa seleccionada o cuando lleva demasiado tiempo sin respuesta.</p>
+              </div>
+              <span class="switch"><input type="checkbox" id="avail-alert-toggle" /><span class="switch-track"></span></span>
+            </div>
+            <p class="muted" id="avail-alert-hint">La alerta está desactivada. Podés configurarla y luego activarla con el interruptor de arriba.</p>
+
+            <div class="field-group">
+              <span class="cf-type-field-label">Números que reciben las alertas</span>
+              <div class="avail-phone-row">
+                <input type="text" id="avail-phone-input" placeholder="51987654321" />
+                <button type="button" class="btn btn-ghost" id="avail-phone-add-btn">＋ Agregar</button>
+              </div>
+              <p class="muted" style="margin:0;">Solo dígitos, 8–15, incluyendo el código de país (ej. 51987654321).</p>
+              <div id="avail-phone-list" class="avail-phone-list"></div>
+            </div>
+
+            <div class="field-group">
+              <span class="cf-type-field-label">Etapas que disparan la alerta</span>
+              <div class="filter-dropdown" id="avail-etapas-dropdown">
+                <button type="button" class="filter-trigger" id="avail-etapas-trigger">Seleccionar etapas… <span class="filter-caret">▾</span></button>
+                <div class="filter-panel" id="avail-etapas-panel" hidden>
+                  <div class="filter-panel-list" id="avail-etapas-list"></div>
+                </div>
+              </div>
+              <p class="muted" style="margin:0;">ℹ️ Frío = el lead se enfrió (volvió a etapa fría), no un lead nuevo. La creación de leads nunca genera alerta.</p>
+            </div>
+
+            <div class="field-group">
+              <span class="cf-type-field-label">Tiempo sin respuesta antes de avisar</span>
+              <div class="avail-minutes-row" id="avail-minutes-chips">
+                <button type="button" class="chip" data-minutes="5">5 min</button>
+                <button type="button" class="chip" data-minutes="10">10 min</button>
+                <button type="button" class="chip is-active" data-minutes="15">15 min</button>
+                <button type="button" class="chip" data-minutes="30">30 min</button>
+                <button type="button" class="chip" data-minutes="60">60 min</button>
+                <input type="number" id="avail-minutes-input" min="1" max="1440" value="15" />
+                <span class="muted">min</span>
+              </div>
+              <p class="muted" style="margin:0;">Entre 1 y 1440 minutos. Por defecto 15 min.</p>
+            </div>
+
+            <div class="field-group">
+              <span class="cf-type-field-label">Vista previa de los avisos</span>
+              <div class="avail-preview-box">
+                <div class="avail-preview-label">Alerta por cambio de etapa</div>
+                <p id="avail-preview-etapa" class="muted">Selecciona al menos una etapa para ver el aviso que se enviará cuando un lead llegue a ella.</p>
+                <p class="muted avail-preview-note">Se enviará a los números configurados, desde el mismo canal del lead, cuando un lead entre a una etapa seleccionada (el nombre, canal y vendedor son de ejemplo).</p>
+              </div>
+              <div class="avail-preview-box avail-preview-box-warn">
+                <div class="avail-preview-label">Alerta por lead sin responder</div>
+                <p id="avail-preview-timeout"></p>
+                <p class="muted avail-preview-note" id="avail-preview-timeout-note"></p>
+              </div>
+            </div>
+
+            <div class="settings-actions">
+              <span id="avail-config-status" class="settings-status"></span>
+              <button type="button" class="btn btn-primary" id="avail-config-save-btn">Guardar configuración</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ═══ Vista: Leads ══════════════════════════════════════════════ -->
       <section id="view-leads" class="view" hidden>
         <section class="kpis" id="kpis">
@@ -662,13 +830,22 @@
         </div>
 
         <label>
-          Prompt <span class="hint">(opcional — lo puedes agregar o editar después desde Configuración)</span>
-          <textarea name="system_prompt" rows="6" placeholder="Describe cómo debe comportarse la IA en este canal. Se específico sobre el tono, estilo y objetivos…"></textarea>
+          Proveedor de IA <span class="hint">(opcional — puedes configurarlo después desde Configuración)</span>
+          <select id="vf-ai-provider" name="ai_provider">
+            <option value="">Selecciona un proveedor</option>
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openai">OpenAI (GPT)</option>
+            <option value="google">Google (Gemini)</option>
+          </select>
+        </label>
+        <label>
+          API key <span class="hint">(la clave de este canal, distinta a la de los demás)</span>
+          <input id="vf-ai-api-key" name="ai_api_key" type="password" placeholder="sk-…" autocomplete="off" />
         </label>
 
-        <div class="settings-actions">
-          <span id="vendor-status" class="settings-status"></span>
+        <div class="settings-actions settings-actions-left">
           <button type="submit" class="btn btn-primary" id="vendor-submit-btn">Crear canal</button>
+          <span id="vendor-status" class="settings-status"></span>
         </div>
       </form>
     </div>
@@ -893,6 +1070,128 @@
           <button type="submit" class="btn btn-primary">✨ Analizar</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal: nueva automatización — elegir plantilla -->
+  <div id="automation-template-overlay" class="overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="drawer-header">
+        <h2>Nueva automatización — elige una plantilla</h2>
+        <button class="btn-icon" id="automation-template-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="settings-form">
+        <p class="muted" style="margin:-8px 0 0;">La IA propone el plan según tu objetivo; tú lo ajustas y apruebas.</p>
+        <div id="automation-template-list" class="automation-template-list"></div>
+        <button type="button" class="btn btn-ghost automation-scratch-btn" id="automation-scratch-btn">Empezar desde cero</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: ajustar el plan día a día -->
+  <div id="automation-editor-overlay" class="overlay" hidden>
+    <div class="modal automation-editor-modal">
+      <div class="drawer-header">
+        <h2>Ajusta el plan día a día</h2>
+        <button class="btn-icon" id="automation-editor-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="automation-editor-form" class="settings-form">
+        <p class="muted" style="margin:-8px 0 0;">Cada paso se envía solo si el lead NO respondió (Regla 1).</p>
+        <label>
+          Nombre del evento/objetivo
+          <input id="automation-name-input" name="name" type="text" required />
+        </label>
+
+        <div id="automation-steps-list" class="automation-steps-list"></div>
+
+        <label class="cf-required-box">
+          <input type="checkbox" id="automation-ignore-exit" name="ignore_exit_on_conversion" />
+          <span><strong>Ignorar salida por conversión</strong><span class="hint hint-block">Para cadencias post-venta o de recuperación: el motor NO sacará a los leads que lleguen a "por depositar" o "venta".</span></span>
+        </label>
+
+        <div class="automation-editor-footer">
+          <button type="button" class="btn btn-ghost" id="automation-add-step-btn">＋ Agregar paso</button>
+          <div class="automation-editor-footer-right">
+            <span id="automation-editor-status" class="settings-status"></span>
+            <button type="button" class="btn btn-ghost" id="automation-editor-save-draft-btn">Guardar como borrador</button>
+            <button type="button" class="btn btn-ghost" id="automation-back-btn">Atrás</button>
+            <button type="submit" class="btn btn-primary">Continuar</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: aprobar la audiencia (paso 3) -->
+  <div id="automation-audience-overlay" class="overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="drawer-header">
+        <h2>Aprueba la audiencia</h2>
+        <button class="btn-icon" id="automation-audience-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="settings-form">
+        <p class="muted" style="margin:-8px 0 0;">Define a quién va dirigida y aprueba para activar el motor.</p>
+
+        <div class="field-group">
+          <span class="cf-type-field-label">Temperatura de leads a invitar</span>
+          <div class="filters audience-chip-row" id="audience-temp-chips">
+            <button type="button" class="chip is-active" data-temp="CALIFICADO">🔥 Calientes</button>
+            <button type="button" class="chip" data-temp="TIBIO">Tibios</button>
+            <button type="button" class="chip" data-temp="FRIO">Fríos</button>
+          </div>
+          <p class="muted" style="margin:0;">Score Brain por temperatura: Fríos 0–49 · Tibios 50–79 · Calientes 80–100.</p>
+        </div>
+
+        <div class="field-group">
+          <span class="cf-type-field-label">Etapa del lead (opcional)</span>
+          <div class="filters audience-chip-row" id="audience-etapa-chips">
+            <button type="button" class="chip" data-etapa="por_depositar">Por depositar</button>
+            <button type="button" class="chip" data-etapa="venta">Venta</button>
+            <button type="button" class="chip" data-etapa="perdido">Perdido</button>
+          </div>
+          <p class="muted" style="margin:0;">Etapas del pipeline (post-conversión), sin banda de score. Perdido no maneja score.</p>
+        </div>
+
+        <div class="field-group">
+          <span class="cf-type-field-label">Rango de score (Brain 0–100, opcional)</span>
+          <div class="audience-score-range">
+            <input type="number" id="audience-score-min" min="0" max="100" placeholder="Mín (ej: 50)" />
+            <span>—</span>
+            <input type="number" id="audience-score-max" min="0" max="100" placeholder="Máx (ej: 79)" />
+          </div>
+          <p class="muted" style="margin:0;">Vacío = sin límite. Los leads sin calificar cuentan como score 0.</p>
+        </div>
+
+        <button type="button" class="btn btn-ghost" id="audience-preview-btn">👥 Previsualizar audiencia</button>
+        <p id="audience-preview-result" class="muted" style="margin:0;"></p>
+
+        <div class="settings-actions">
+          <span id="automation-audience-status" class="settings-status"></span>
+          <button type="button" class="btn btn-ghost" id="automation-save-draft-btn">Guardar como borrador</button>
+          <button type="button" class="btn btn-primary" id="automation-activate-btn">🚀 Aprobar y activar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: asignar un lead de la cola de emergencia -->
+  <div id="avail-assign-overlay" class="overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="drawer-header">
+        <h2>Asignar lead</h2>
+        <button class="btn-icon" id="avail-assign-modal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="settings-form">
+        <p class="muted" id="avail-assign-lead-name" style="margin:-8px 0 0;"></p>
+        <label>
+          Vendedor
+          <select id="avail-assign-select"></select>
+        </label>
+        <div class="settings-actions">
+          <span id="avail-assign-status" class="settings-status"></span>
+          <button type="button" class="btn btn-primary" id="avail-assign-confirm-btn">Asignar</button>
+        </div>
+      </div>
     </div>
   </div>
 

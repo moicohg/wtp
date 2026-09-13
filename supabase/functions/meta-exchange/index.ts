@@ -19,6 +19,13 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+const DEFAULT_MODEL: Record<string, string> = {
+  anthropic: 'claude-sonnet-4-6',
+  openai:    'gpt-4o',
+  google:    'gemini-2.0-flash',
+};
+const VALID_PROVIDERS = ['anthropic', 'openai', 'google'];
+
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -42,6 +49,9 @@ Deno.serve(async (req: Request) => {
     waba_id: string;
     vendor_name?: string;
     system_prompt?: string;
+    ai_provider?: string;
+    ai_api_key?: string;
+    ai_model?: string;
   };
 
   try {
@@ -50,10 +60,14 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'Payload inválido' }, 400);
   }
 
-  const { phone_number_id, waba_id, vendor_name, system_prompt } = body;
+  const { phone_number_id, waba_id, vendor_name, system_prompt, ai_provider, ai_api_key, ai_model } = body;
 
   if (!phone_number_id || !waba_id) {
     return json({ error: 'Faltan phone_number_id y/o waba_id' }, 400);
+  }
+
+  if (ai_provider && !VALID_PROVIDERS.includes(ai_provider)) {
+    return json({ error: 'ai_provider inválido. Usa: anthropic, openai o google' }, 400);
   }
 
   // ── Obtener access_token ────────────────────────────────────────────────────
@@ -141,9 +155,10 @@ Deno.serve(async (req: Request) => {
         meta_waba_id:         waba_id,
         meta_access_token:    accessToken,
         meta_verified:        true,
-        ai_provider:          'anthropic',
-        ai_model:             'claude-sonnet-4-6',
-        ai_api_key:           '',           // el asesor lo configura luego desde Settings
+        // Si no se eligió proveedor de IA al crear el canal, queda pendiente (se configura luego desde Configuración).
+        ai_provider:          ai_provider || 'anthropic',
+        ai_model:             ai_provider ? (ai_model || DEFAULT_MODEL[ai_provider]) : 'claude-sonnet-4-6',
+        ai_api_key:           ai_api_key || '',
         system_prompt:        system_prompt ?? null,
       })
       .select('id')
