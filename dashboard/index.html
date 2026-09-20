@@ -7,37 +7,58 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260920_2" />
+  <link rel="stylesheet" href="style.css?v=20260920_3" />
 </head>
 <body>
   <div class="shell" hidden>
     <aside class="sidebar">
       <div class="brand">
-        <span class="brand-dot"></span>
-        <h1>CRM WhatsApp</h1>
+        <div class="brand-badge-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2zm.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.196 8.196 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24h.01zm-4.7 4.13c-.26 0-.67.1-1.02.48-.35.39-1.35 1.32-1.35 3.22 0 1.9 1.38 3.74 1.57 3.99.2.26 2.68 4.24 6.6 5.78 3.24 1.28 3.9.86 4.6.79.7-.07 2.25-.92 2.57-1.81.32-.89.32-1.65.22-1.81-.1-.16-.36-.26-.76-.46-.4-.2-2.35-1.16-2.72-1.29-.36-.14-.63-.2-.89.2-.26.39-1.02 1.29-1.25 1.55-.23.26-.46.3-.86.1-.4-.2-1.69-.62-3.22-1.99-1.19-1.06-1.99-2.37-2.22-2.77-.23-.4-.02-.61.18-.81.18-.18.4-.46.6-.69.2-.23.26-.39.4-.66.13-.26.07-.49-.03-.69-.1-.2-.89-2.14-1.22-2.93-.32-.77-.65-.67-.89-.68-.23-.01-.49-.01-.76-.01z"/>
+          </svg>
+        </div>
+        <div>
+          <h1>CRM WhatsApp</h1>
+          <span class="brand-tag">Cloud Pro</span>
+        </div>
       </div>
 
       <div class="nav-group-label">Plataforma</div>
       <nav class="sidenav" id="sidenav">
-        <button class="sidenav-item" data-section="dashboard" data-perm="analytics.dashboard" type="button">Dashboard</button>
+        <button class="sidenav-item" data-section="dashboard" data-perm="analytics.dashboard" type="button">
+          <span class="nav-icon">📊</span>Dashboard
+        </button>
 
         <div class="sidenav-section" id="sidenav-canales-section">
           <button class="sidenav-item is-parent is-active" data-section="canales-lista" data-perm-any="config.manage_channels leads.view" type="button">
-            Canales
+            <span class="nav-icon">💬</span>Canales
           </button>
           <div class="sidenav-children">
-            <button class="sidenav-subitem is-active" data-section="canales-lista" data-perm="config.manage_channels" type="button">Lista de asesores</button>
-            <button class="sidenav-subitem" data-section="bandeja-global" data-perm="leads.view" type="button">Bandeja Global</button>
+            <button class="sidenav-subitem is-active" data-section="canales-lista" data-perm="config.manage_channels" type="button">👥 Lista de asesores</button>
+            <button class="sidenav-subitem" data-section="bandeja-global" data-perm="leads.view" type="button">📥 Bandeja Global</button>
             <div id="sidenav-vendors"></div>
           </div>
         </div>
 
-        <button class="sidenav-item" data-section="productos" data-perm="config.products" type="button">Productos</button>
-        <button class="sidenav-item" data-section="catalogo-ia" data-perm="config.products" type="button">Catálogo IA</button>
-        <button class="sidenav-item" data-section="leads" data-perm="leads.view" type="button">Leads</button>
-        <button class="sidenav-item" data-section="automatizacion" data-perm="messaging.manage_automations" type="button">Automatización</button>
-        <button class="sidenav-item" data-section="disponibilidad" type="button">Disponibilidad</button>
-        <button class="sidenav-item" data-section="empresas" id="nav-empresas" type="button" hidden>Empresas</button>
+        <button class="sidenav-item" data-section="productos" data-perm="config.products" type="button">
+          <span class="nav-icon">📦</span>Productos
+        </button>
+        <button class="sidenav-item" data-section="catalogo-ia" data-perm="config.products" type="button">
+          <span class="nav-icon">🤖</span>Catálogo IA
+        </button>
+        <button class="sidenav-item" data-section="leads" data-perm="leads.view" type="button">
+          <span class="nav-icon">🎯</span>Leads
+        </button>
+        <button class="sidenav-item" data-section="automatizacion" data-perm="messaging.manage_automations" type="button">
+          <span class="nav-icon">⚡</span>Automatización
+        </button>
+        <button class="sidenav-item" data-section="disponibilidad" type="button">
+          <span class="nav-icon">🕒</span>Disponibilidad
+        </button>
+        <button class="sidenav-item" data-section="empresas" id="nav-empresas" type="button" hidden>
+          <span class="nav-icon">🏢</span>Empresas
+        </button>
       </nav>
 
       <div class="sidebar-footer">
