@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CRM WhatsApp</title>
-  <link rel="stylesheet" href="style.css" />
+  <title>CRM WhatsApp · Iniciar Sesión</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=20260920_2" />
 </head>
 <body>
   <div class="shell" hidden>
@@ -1424,46 +1427,204 @@
   </div>
 
   <!-- Pantalla: iniciar sesión (Empresa: correo · Vendedor: teléfono) -->
-  <div id="login-screen" class="logged-out-screen" hidden>
-    <div class="logged-out-card login-card">
-      <div class="brand login-brand">
-        <span class="brand-dot"></span>
-        <h1>CRM WhatsApp</h1>
-      </div>
-      <h2>Iniciar sesión</h2>
-      <div class="filters login-modes" id="login-modes">
-        <button class="chip is-active" data-login-mode="empresa" type="button">🏢 Empresa</button>
-        <button class="chip" data-login-mode="vendedor" type="button">👤 Vendedor</button>
-      </div>
-      <form id="login-form" class="settings-form login-form">
-        <div id="login-empresa-fields" class="field-group">
-          <label>
-            Correo
-            <input name="email" type="email" placeholder="correo@empresa.com" autocomplete="username" />
-          </label>
+  <div id="login-screen" class="logged-out-screen login-screen-modern" hidden>
+    <div class="login-container">
+      <!-- Lado Izquierdo: Showcase de Marca y Beneficios -->
+      <div class="login-showcase">
+        <div class="showcase-glow showcase-glow-1"></div>
+        <div class="showcase-glow showcase-glow-2"></div>
+        
+        <div class="showcase-header">
+          <div class="showcase-brand">
+            <div class="brand-badge-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2zm.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.196 8.196 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24h.01zm-4.7 4.13c-.26 0-.67.1-1.02.48-.35.39-1.35 1.32-1.35 3.22 0 1.9 1.38 3.74 1.57 3.99.2.26 2.68 4.24 6.6 5.78 3.24 1.28 3.9.86 4.6.79.7-.07 2.25-.92 2.57-1.81.32-.89.32-1.65.22-1.81-.1-.16-.36-.26-.76-.46-.4-.2-2.35-1.16-2.72-1.29-.36-.14-.63-.2-.89.2-.26.39-1.02 1.29-1.25 1.55-.23.26-.46.3-.86.1-.4-.2-1.69-.62-3.22-1.99-1.19-1.06-1.99-2.37-2.22-2.77-.23-.4-.02-.61.18-.81.18-.18.4-.46.6-.69.2-.23.26-.39.4-.66.13-.26.07-.49-.03-.69-.1-.2-.89-2.14-1.22-2.93-.32-.77-.65-.67-.89-.68-.23-.01-.49-.01-.76-.01z"/>
+              </svg>
+            </div>
+            <div>
+              <span class="showcase-brand-title">CRM WhatsApp</span>
+              <span class="showcase-badge">v2.5 Cloud</span>
+            </div>
+          </div>
         </div>
-        <div id="login-vendedor-fields" class="field-group" hidden>
-          <label>
-            Número de WhatsApp
-            <div class="phone-field">
-              <select name="dial" id="login-dial" aria-label="Código de país"></select>
-              <input name="phone" type="tel" placeholder="987 654 321" autocomplete="tel-national" />
+
+        <div class="showcase-body">
+          <h2 class="showcase-heading">Potencia tus ventas y atención al cliente en WhatsApp.</h2>
+          <p class="showcase-subheading">Centraliza canales, asigna prospectos a asesores automáticamente y acelera tus conversiones con inteligencia artificial.</p>
+
+          <div class="showcase-features">
+            <div class="showcase-feature-item">
+              <div class="feature-icon-wrap">⚡</div>
+              <div>
+                <strong>Distribución inteligente de leads</strong>
+                <span>Asignación equitativa e inmediata a tu equipo comercial.</span>
+              </div>
+            </div>
+            <div class="showcase-feature-item">
+              <div class="feature-icon-wrap">🤖</div>
+              <div>
+                <strong>Respuestas y Catálogo con IA</strong>
+                <span>Asistencia automática y catálogo sincronizado 24/7.</span>
+              </div>
+            </div>
+            <div class="showcase-feature-item">
+              <div class="feature-icon-wrap">📊</div>
+              <div>
+                <strong>Trazabilidad y métricas en vivo</strong>
+                <span>Embudo de ventas, tiempos de respuesta y rendimiento por asesor.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="showcase-footer">
+          <div class="showcase-trust">
+            <div class="trust-avatars">
+              <span class="trust-avatar" style="background:#128c7e">M</span>
+              <span class="trust-avatar" style="background:#3763d6">A</span>
+              <span class="trust-avatar" style="background:#a24fc9">C</span>
+              <span class="trust-avatar" style="background:#1a9c5b">R</span>
+            </div>
+            <div class="trust-text">
+              <strong>Plataforma comercial para equipos</strong>
+              <span>Infraestructura oficial Meta Cloud API</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lado Derecho: Tarjeta de Acceso -->
+      <div class="login-card-modern">
+        <div class="login-card-header">
+          <div class="mobile-brand">
+            <div class="brand-badge-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2zm.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.196 8.196 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24h.01zm-4.7 4.13c-.26 0-.67.1-1.02.48-.35.39-1.35 1.32-1.35 3.22 0 1.9 1.38 3.74 1.57 3.99.2.26 2.68 4.24 6.6 5.78 3.24 1.28 3.9.86 4.6.79.7-.07 2.25-.92 2.57-1.81.32-.89.32-1.65.22-1.81-.1-.16-.36-.26-.76-.46-.4-.2-2.35-1.16-2.72-1.29-.36-.14-.63-.2-.89.2-.26.39-1.02 1.29-1.25 1.55-.23.26-.46.3-.86.1-.4-.2-1.69-.62-3.22-1.99-1.19-1.06-1.99-2.37-2.22-2.77-.23-.4-.02-.61.18-.81.18-.18.4-.46.6-.69.2-.23.26-.39.4-.66.13-.26.07-.49-.03-.69-.1-.2-.89-2.14-1.22-2.93-.32-.77-.65-.67-.89-.68-.23-.01-.49-.01-.76-.01z"/>
+              </svg>
+            </div>
+            <h2>CRM WhatsApp</h2>
+          </div>
+          
+          <div class="login-welcome-text">
+            <h2 class="login-title">Iniciar sesión</h2>
+            <p class="login-subtitle">Elige tu rol y accede a tu panel comercial.</p>
+          </div>
+
+          <!-- Selector de Modo: Empresa vs Vendedor -->
+          <div class="filters login-modes login-segmented-control" id="login-modes">
+            <button class="chip is-active login-mode-btn" data-login-mode="empresa" type="button">
+              <span class="mode-icon">🏢</span>
+              <span class="mode-text">Empresa</span>
+            </button>
+            <button class="chip login-mode-btn" data-login-mode="vendedor" type="button">
+              <span class="mode-icon">👤</span>
+              <span class="mode-text">Vendedor</span>
+            </button>
+          </div>
+        </div>
+
+        <form id="login-form" class="settings-form login-form-modern">
+          <!-- Campo Empresa: Correo -->
+          <div id="login-empresa-fields" class="field-group">
+            <label class="modern-label">
+              <span class="label-text">Correo de empresa</span>
+              <div class="input-with-icon">
+                <span class="input-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
+                  </svg>
+                </span>
+                <input name="email" type="email" placeholder="correo@empresa.com" autocomplete="username" class="modern-input" />
+              </div>
+            </label>
+          </div>
+
+          <!-- Campo Vendedor: País y Teléfono -->
+          <div id="login-vendedor-fields" class="field-group" hidden>
+            <label class="modern-label">
+              <span class="label-text">Número de WhatsApp</span>
+              <div class="phone-field modern-phone-field">
+                <div class="select-wrapper">
+                  <select name="dial" id="login-dial" aria-label="Código de país" class="modern-select"></select>
+                </div>
+                <div class="input-with-icon phone-input-wrap">
+                  <span class="input-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                    </svg>
+                  </span>
+                  <input name="phone" type="tel" placeholder="987 654 321" autocomplete="tel-national" class="modern-input" />
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <!-- Campo Contraseña con Toggle de visibilidad -->
+          <label class="modern-label">
+            <span class="label-text">Contraseña</span>
+            <div class="input-with-icon password-input-wrap">
+              <span class="input-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+              </span>
+              <input name="password" id="login-password-input" type="password" placeholder="••••••••" autocomplete="current-password" required class="modern-input" />
+              <button type="button" class="btn-toggle-password" id="btn-toggle-password" aria-label="Mostrar u ocultar contraseña" tabindex="-1">
+                <svg class="eye-open" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <svg class="eye-closed" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                  <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path>
+                  <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path>
+                  <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path>
+                  <line x1="2" y1="2" x2="22" y2="22"></line>
+                </svg>
+              </button>
             </div>
           </label>
+
+          <!-- Mensaje de estado / errores -->
+          <div class="settings-actions login-actions-modern">
+            <span id="login-status" class="settings-status"></span>
+            <button type="submit" class="btn btn-primary login-submit-modern" id="login-submit-btn">
+              <span>Ingresar al panel</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </div>
+        </form>
+
+        <div class="login-footer-info">
+          <div class="login-mode-hint" id="login-mode-hint">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <p class="hint login-hint" id="login-hint-text">
+              Ingresa como <strong>Empresa</strong> con tu correo, o como <strong>Vendedor</strong> con tu número de WhatsApp.
+            </p>
+          </div>
+
+          <p class="hint login-hint login-legal">
+            <a href="/privacidad.html" target="_blank" rel="noopener">Privacidad</a> · 
+            <a href="/terminos.html" target="_blank" rel="noopener">Términos</a> · 
+            <a href="/eliminar-datos.html" target="_blank" rel="noopener">Eliminación de datos</a>
+          </p>
+
+          <div class="login-security-badge">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            <span>Conexión cifrada de extremo a extremo · Cloud SSL</span>
+          </div>
         </div>
-        <label>
-          Contraseña
-          <input name="password" type="password" placeholder="••••••••" autocomplete="current-password" required />
-        </label>
-        <div class="settings-actions">
-          <span id="login-status" class="settings-status"></span>
-          <button type="submit" class="btn btn-primary" id="login-submit-btn">Ingresar</button>
-        </div>
-      </form>
-      <p class="hint login-hint">Ingresa como <strong>Empresa</strong> con tu correo, o como <strong>Vendedor</strong> con el número de WhatsApp que te dio tu empresa.</p>
-      <p class="hint login-hint login-legal">
-        <a href="/privacidad.html">Privacidad</a> · <a href="/terminos.html">Términos</a> · <a href="/eliminar-datos.html">Eliminación de datos</a>
-      </p>
+      </div>
     </div>
   </div>
 

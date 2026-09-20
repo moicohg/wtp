@@ -5379,6 +5379,12 @@ function setLoginMode(mode) {
   loginModesEl.querySelectorAll('.chip').forEach((c) => c.classList.toggle('is-active', c.dataset.loginMode === mode));
   loginEmpresaFields.hidden = mode !== 'empresa';
   loginVendedorFields.hidden = mode !== 'vendedor';
+  const hintEl = document.getElementById('login-hint-text');
+  if (hintEl) {
+    hintEl.innerHTML = mode === 'empresa'
+      ? 'Acceso como <strong>Empresa</strong>: usa tu correo y contraseña registrados.'
+      : 'Acceso como <strong>Vendedor</strong>: usa tu número de WhatsApp y contraseña asignada.';
+  }
   setLoginStatus('');
 }
 
@@ -5386,6 +5392,19 @@ loginModesEl.addEventListener('click', (ev) => {
   const btn = ev.target.closest('.chip[data-login-mode]');
   if (btn) setLoginMode(btn.dataset.loginMode);
 });
+
+const togglePassBtn = document.getElementById('btn-toggle-password');
+const passInput = document.getElementById('login-password-input');
+if (togglePassBtn && passInput) {
+  togglePassBtn.addEventListener('click', () => {
+    const isPass = passInput.type === 'password';
+    passInput.type = isPass ? 'text' : 'password';
+    const eyeOpen = togglePassBtn.querySelector('.eye-open');
+    const eyeClosed = togglePassBtn.querySelector('.eye-closed');
+    if (eyeOpen) eyeOpen.style.display = isPass ? 'none' : 'block';
+    if (eyeClosed) eyeClosed.style.display = isPass ? 'block' : 'none';
+  });
+}
 
 loginForm.addEventListener('submit', async (ev) => {
   ev.preventDefault();
