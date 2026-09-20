@@ -11,6 +11,15 @@ const SUPABASE_URL = 'https://znalzptpffnbnzuckiid.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_OyjpoUWipe8vJL5GNgQjWw_WVtmGGFE';
 const FUNCTIONS_URL = `${SUPABASE_URL}/functions/v1`;
 
+// App de Meta para "Continuar con Facebook" al conectar un canal (Embedded Signup).
+// Ambos valores son públicos. Mientras estén vacíos el botón queda oculto y solo
+// funciona la conexión manual con token.
+//   META_APP_ID:    developers.facebook.com → tu app → Configuración → Básica
+//   META_CONFIG_ID: Facebook Login for Business → Configuraciones (plantilla WhatsApp Embedded Signup)
+const META_APP_ID = '';
+const META_CONFIG_ID = '';
+const FB_SDK_VERSION = 'v25.0';
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ── Estado ───────────────────────────────────────────────────────────────────
@@ -593,6 +602,9 @@ const vendorEvolutionInstanceInput = document.getElementById('vf-evolution-insta
 const vendorMetaPhoneNumberIdInput = document.getElementById('vf-meta-phone-number-id');
 const vendorMetaWabaIdInput = document.getElementById('vf-meta-waba-id');
 const vendorMetaAccessTokenInput = document.getElementById('vf-meta-access-token');
+const vendorFbConnect = document.getElementById('vf-fb-connect');
+const vendorFbConnectBtn = document.getElementById('vf-fb-connect-btn');
+const FB_CONNECT_ENABLED = Boolean(META_APP_ID && META_CONFIG_ID);
 
 const VENDOR_CONNECTION_COPY = {
   evolution: {
@@ -611,6 +623,9 @@ function updateVendorFormConnectionType() {
 
   vendorEvolutionFields.hidden = isMeta;
   vendorMetaFields.hidden = !isMeta;
+  vendorFbConnect.hidden = !(isMeta && FB_CONNECT_ENABLED);
+  // El SDK se precarga para que FB.login corra dentro del clic (si no, el navegador bloquea el popup).
+  if (isMeta && FB_CONNECT_ENABLED) loadFacebookSdk().catch(() => {});
 
   vendorEvolutionInstanceInput.required = !isMeta;
   vendorMetaPhoneNumberIdInput.required = isMeta;
@@ -4238,23 +4253,16 @@ async function createVendorEvolution(fd, name) {
   if (error) throw new Error(friendlyDbError(error.message));
 }
 
-async function createVendorMeta(fd, name) {
+// Crea/actualiza el canal Meta en meta-exchange (con `access_token` manual o con
+// el `code` de Embedded Signup) y guarda el teléfono del asesor si se indicó.
+async function callMetaExchange(fd, name, credentials) {
   const phone_number = fd.get('meta_phone_number')?.toString().trim() || null;
-  const phone_number_id = fd.get('meta_phone_number_id')?.toString().trim();
-  const waba_id = fd.get('meta_waba_id')?.toString().trim();
-  const access_token = fd.get('meta_access_token')?.toString().trim();
-
-  if (!phone_number_id || !waba_id || !access_token) {
-    throw new Error('Phone Number ID, WABA ID y el access token son obligatorios.');
-  }
 
   const resp = await fetch(`${FUNCTIONS_URL}/meta-exchange`, {
     method: 'POST',
     headers: await authHeaders(),
     body: JSON.stringify({
-      access_token,
-      phone_number_id,
-      waba_id,
+      ...credentials,
       vendor_name: name,
       ...readAiConfig(fd),
     }),
@@ -4266,6 +4274,148 @@ async function createVendorMeta(fd, name) {
     const { error } = await supabase.from('vendors').update({ phone_number }).eq('id', json.vendor_id);
     if (error) throw new Error(error.message);
   }
+}
+
+async function createVendorMeta(fd, name) {
+  const phone_number_id = fd.get('meta_phone_number_id')?.toString().trim();
+  const waba_id = fd.get('meta_waba_id')?.toString().trim();
+  const access_token = fd.get('meta_access_token')?.toString().trim();
+
+  if (!phone_number_id || !waba_id || !access_token) {
+    throw new Error('Phone Number ID, WABA ID y el access token son obligatorios.');
+  }
+
+  await callMetaExchange(fd, name, { access_token, phone_number_id, waba_id });
+}
+
+// ── Conectar canal Meta con Facebook (WhatsApp Embedded Signup) ──────────────
+// FB.login devuelve un `code` (vale 30 s) y, por separado, un mensaje postMessage
+// con el número y la cuenta de WhatsApp elegidos. Se esperan ambos y se envían a
+// meta-exchange, que canjea el code por el token en el servidor.
+
+let fbSdkPromise = null;
+
+function loadFacebookSdk() {
+  if (fbSdkPromise) return fbSdkPromise;
+  fbSdkPromise = new Promise((resolve, reject) => {
+    window.fbAsyncInit = () => {
+      window.FB.init({ appId: META_APP_ID, autoLogAppEvents: true, xfbml: false, version: FB_SDK_VERSION });
+      resolve(window.FB);
+    };
+    const script = document.createElement('script');
+    script.src = 'https://connect.facebook.net/es_LA/sdk.js';
+    script.async = true;
+    script.crossOrigin = 'anonymous';
+    script.onerror = () => {
+      fbSdkPromise = null;
+      script.remove();
+      reject(new Error('No se pudo cargar el SDK de Facebook. Desactiva el bloqueador de anuncios e inténtalo de nuevo.'));
+    };
+    document.head.appendChild(script);
+  });
+  return fbSdkPromise;
+}
+
+function isFacebookOrigin(origin) {
+  try {
+    const host = new URL(origin).hostname;
+    return host === 'facebook.com' || host.endsWith('.facebook.com');
+  } catch {
+    return false;
+  }
+}
+
+// Resuelve con { code, phone_number_id, waba_id }; rechaza si el usuario cancela o Meta falla.
+function runEmbeddedSignup() {
+  return new Promise((resolve, reject) => {
+    let code = null;
+    let session = null;
+    let timer = null;
+    let settled = false;
+
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      window.removeEventListener('message', onMessage);
+      fn(value);
+    };
+    const tryFinish = () => {
+      if (code && session) settle(resolve, { code, ...session });
+    };
+
+    function onMessage(ev) {
+      if (!isFacebookOrigin(ev.origin)) return;
+      let msg = ev.data;
+      if (typeof msg === 'string') {
+        try { msg = JSON.parse(msg); } catch { return; }
+      }
+      if (msg?.type !== 'WA_EMBEDDED_SIGNUP') return;
+
+      if (msg.event === 'CANCEL') {
+        return settle(reject, new Error('Cancelaste la conexión antes de terminar.'));
+      }
+      if (msg.data?.error_message) {
+        return settle(reject, new Error(`Meta reportó un error: ${msg.data.error_message}`));
+      }
+      if (String(msg.event ?? '').startsWith('FINISH')) {
+        if (!msg.data?.phone_number_id || !msg.data?.waba_id) {
+          return settle(reject, new Error('No elegiste un número de WhatsApp Business. Vuelve a intentarlo y selecciona uno.'));
+        }
+        session = { phone_number_id: msg.data.phone_number_id, waba_id: msg.data.waba_id };
+        tryFinish();
+      }
+    }
+    window.addEventListener('message', onMessage);
+
+    window.FB.login(
+      (resp) => {
+        if (!resp.authResponse?.code) {
+          return settle(reject, new Error('Facebook no autorizó la conexión (cancelaste o negaste el permiso).'));
+        }
+        code = resp.authResponse.code;
+        // El code caduca a los 30 s: si Meta no manda el número, no sirve seguir esperando.
+        timer = setTimeout(() => settle(reject, new Error('Meta no devolvió el número elegido a tiempo. Inténtalo de nuevo.')), 20000);
+        tryFinish();
+      },
+      {
+        config_id: META_CONFIG_ID,
+        response_type: 'code',
+        override_default_response_type: true,
+        extras: { setup: {} },
+      }
+    );
+  });
+}
+
+async function connectVendorWithFacebook() {
+  const fd = new FormData(vendorForm);
+  const name = fd.get('name')?.toString().trim();
+  const setStatus = (text, cls = '') => {
+    vendorStatus.textContent = text;
+    vendorStatus.className = `settings-status ${cls}`.trim();
+  };
+
+  if (!name) return setStatus('Escribe primero el nombre del canal.', 'err');
+  if (!window.FB) {
+    setStatus('Cargando el SDK de Facebook… vuelve a pulsar en un momento.');
+    loadFacebookSdk().catch((err) => setStatus(err.message, 'err'));
+    return;
+  }
+
+  vendorFbConnectBtn.disabled = true;
+  setStatus('Esperando la autorización de Facebook…');
+  try {
+    const session = await runEmbeddedSignup();
+    setStatus('Conectando el canal…');
+    await callMetaExchange(fd, name, session);
+  } catch (err) {
+    setStatus(`Error: ${err.message}`, 'err');
+    return;
+  } finally {
+    vendorFbConnectBtn.disabled = false;
+  }
+  await onVendorCreated();
 }
 
 async function createVendor(ev) {
@@ -4295,6 +4445,10 @@ async function createVendor(ev) {
     return;
   }
 
+  await onVendorCreated();
+}
+
+async function onVendorCreated() {
   vendorStatus.textContent = 'Canal creado ✓';
   vendorStatus.className = 'settings-status ok';
   await loadVendors();
@@ -5061,6 +5215,7 @@ vendorOverlay.addEventListener('click', (ev) => {
 });
 vendorForm.addEventListener('submit', createVendor);
 vendorConnectionType.addEventListener('change', updateVendorFormConnectionType);
+vendorFbConnectBtn.addEventListener('click', connectVendorWithFacebook);
 
 document.getElementById('create-agent-btn').addEventListener('click', () => openAgentModal());
 document.getElementById('create-agent-btn-config').addEventListener('click', () => openAgentModal());

@@ -5,6 +5,9 @@ import { admin as supabase, getCaller, handleError, json, preflight, requirePerm
 
 const META_APP_ID     = Deno.env.get('META_APP_ID')!;
 const META_APP_SECRET = Deno.env.get('META_APP_SECRET')!;
+// PIN de 6 dígitos con el que se registra cada número nuevo en Cloud API
+// (verificación en dos pasos). Sin él, el registro se omite.
+const REGISTER_PIN    = Deno.env.get('META_REGISTER_PIN') ?? '';
 const GRAPH_VERSION   = 'v20.0';
 
 const DEFAULT_MODEL: Record<string, string> = {
@@ -185,6 +188,32 @@ Deno.serve(async (req: Request) => {
     }
   } catch (e) {
     console.warn('WABA subscription error (no bloqueante):', e);
+  }
+
+  // ── Registrar el número en Cloud API (solo Embedded Signup) ──────────────────
+  // Un número recién agregado por Embedded Signup no envía ni recibe hasta que se
+  // registra. En modo manual el número ya vino configurado desde el panel de Meta.
+  if (body.code) {
+    if (!/^\d{6}$/.test(REGISTER_PIN)) {
+      console.warn('META_REGISTER_PIN no configurado (6 dígitos): se omite el registro del número');
+    } else {
+      try {
+        const regResp = await fetch(
+          `https://graph.facebook.com/${GRAPH_VERSION}/${phone_number_id}/register`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messaging_product: 'whatsapp', pin: REGISTER_PIN }),
+          }
+        );
+        const regData = await regResp.json();
+        if (!regData.success) {
+          console.warn('Phone register warning:', JSON.stringify(regData));
+        }
+      } catch (e) {
+        console.warn('Phone register error (no bloqueante):', e);
+      }
+    }
   }
 
   return json({ success: true, vendor_id: vendorId, display_name: displayName });

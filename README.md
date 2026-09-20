@@ -189,9 +189,12 @@ Secrets de las Edge Functions. Configurar con `supabase secrets set --env-file .
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` | Clientes de Supabase (los provee la plataforma) |
 | `EVOLUTION_API_URL`, `EVOLUTION_API_KEY` | Canal Evolution API |
 | `META_APP_ID`, `META_APP_SECRET`, `META_VERIFY_TOKEN` | Canal Meta Cloud API |
+| `META_REGISTER_PIN` | PIN de 6 dígitos con el que `meta-exchange` registra el número al conectar un canal con "Continuar con Facebook" (Embedded Signup). Sin él se omite el registro |
 | `OPENAI_API_KEY` | `product-autocomplete` y `catalog-analyze-prompt` |
 
-El panel lleva `SUPABASE_URL` y la clave publicable hardcodeadas al inicio de [dashboard/app.js](dashboard/app.js).
+El panel lleva `SUPABASE_URL` y la clave publicable hardcodeadas al inicio de [dashboard/app.js](dashboard/app.js). Ahí mismo van `META_APP_ID` y `META_CONFIG_ID` (públicos) para el botón "Continuar con Facebook"; vacíos, el botón se oculta y queda solo la conexión manual con token.
+
+Páginas públicas que exige Meta para publicar la app: [privacidad](dashboard/privacidad.html), [términos](dashboard/terminos.html) y [eliminación de datos](dashboard/eliminar-datos.html).
 
 ---
 
