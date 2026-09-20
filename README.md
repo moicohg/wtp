@@ -103,7 +103,7 @@ Tablas principales (todas en `public`):
 | `profiles` | Una fila por usuario de Auth: empresa, tipo (`admin` / `vendedor`), super-admin, vínculo a `agents` |
 | `vendors` | Canal de WhatsApp con su bot: tipo (`evolution` / `meta`), credenciales, proveedor de IA, prompt, vendedor asignado, keywords |
 | `agents` | Vendedor humano: nombre, teléfono, rol, estado en tiempo real, prioridad, vencimiento de acceso |
-| `prospects` | Lead. La IA calcula `score`, `label` (CALIFICADO / TIBIO / FRIO / DESCARTADO) y `conversation_step`. El humano edita etapa, etiquetas, perfil, notas, rúbrica y campos personalizados |
+| `prospects` | Lead. La IA calcula `score`, `label` (CALIFICADO / TIBIO / FRIO / DESCARTADO) y `conversation_step`. El humano edita etapa, etiquetas, perfil, notas, rúbrica y campos personalizados. Al guardar la rúbrica, el trigger `apply_calificacion_score()` recalcula `score`/`label`/`prioridad` (suma de puntos: ≥70 CALIFICADO, 40-69 TIBIO, <40 FRIO) |
 | `messages` | Historial por prospecto (`user` / `assistant`), con adjuntos opcionales |
 | `roles` | Roles por empresa con array de permisos. "Administrador" es de sistema |
 | `products` | Catálogo de productos |

@@ -3525,7 +3525,9 @@ ciTagInput.addEventListener('keydown', (ev) => {
 ciTagInput.addEventListener('blur', commitCiTagInput);
 
 // Rúbrica de calificación (Necesidad/Inversión/Urgencia/Autoridad): evaluación
-// manual del asesor, independiente del score/label que calcula la IA.
+// manual del asesor que define el score y la temperatura del lead. Al guardar,
+// el trigger apply_calificacion_score() (migración 20260921010000) recalcula
+// score/label/prioridad en la base; previewCalifTemp() es solo la vista previa.
 const CALIF_RUBRIC = {
   necesidad: {
     max: 25,
@@ -3597,6 +3599,18 @@ function setAllCalifUI() {
   Object.keys(CALIF_RUBRIC).forEach(setCalifUI);
 }
 
+// Espejo de apply_calificacion_score(): mismos umbrales que la base (≥70
+// CALIFICADO, ≥40 TIBIO, si no FRIO; DESCARTADO conserva su label). Solo mueve
+// el medidor mientras se elige; el valor real lo fija la base al guardar.
+function previewCalifTemp() {
+  const points = Object.values(state.ciCalif);
+  if (points.every((v) => v == null)) return;
+  const score = points.reduce((sum, v) => sum + (v ?? 0), 0);
+  const p = state.channelProspects.find((x) => x.id === state.channelActiveProspectId);
+  const label = p?.label === 'DESCARTADO' ? 'DESCARTADO' : score >= 70 ? 'CALIFICADO' : score >= 40 ? 'TIBIO' : 'FRIO';
+  setTempMeter(score, label);
+}
+
 document.querySelectorAll('.ci-calif-select').forEach((detailsEl) => {
   const key = detailsEl.dataset.calif;
   detailsEl.addEventListener('toggle', () => {
@@ -3607,6 +3621,7 @@ document.querySelectorAll('.ci-calif-select').forEach((detailsEl) => {
     if (!opt) return;
     state.ciCalif[key] = Number(opt.dataset.points);
     setCalifUI(key);
+    previewCalifTemp();
     detailsEl.open = false;
   });
 });
@@ -4041,7 +4056,7 @@ async function saveChannelInfo(ev) {
   ciStatus.textContent = 'Guardando…';
   ciStatus.className = 'settings-status';
 
-  const { error } = await supabase
+  const { data: saved, error } = await supabase
     .from('prospects')
     .update({
       etiquetas: state.ciTags,
@@ -4055,13 +4070,20 @@ async function saveChannelInfo(ev) {
       calif_autoridad: state.ciCalif.autoridad,
       custom_field_values: state.ciCustomValues,
     })
-    .eq('id', prospectId);
+    .eq('id', prospectId)
+    .select('score, label, prioridad')
+    .single();
 
   if (error) {
     ciStatus.textContent = `Error: ${error.message}`;
     ciStatus.className = 'settings-status err';
     return;
   }
+  // score/label/prioridad los recalcula la base a partir de la rúbrica.
+  const p = state.channelProspects.find((x) => x.id === prospectId);
+  if (p) Object.assign(p, saved);
+  setTempMeter(saved.score, saved.label);
+  renderChannelContacts();
   ciStatus.textContent = 'Guardado ✓';
   ciStatus.className = 'settings-status ok';
 }
