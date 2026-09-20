@@ -16,7 +16,7 @@ const FUNCTIONS_URL = `${SUPABASE_URL}/functions/v1`;
 // funciona la conexión manual con token.
 //   META_APP_ID:    developers.facebook.com → tu app → Configuración → Básica
 //   META_CONFIG_ID: Facebook Login for Business → Configuraciones (plantilla WhatsApp Embedded Signup)
-const META_APP_ID = '';
+const META_APP_ID = '1350768843578933';
 const META_CONFIG_ID = '';
 const FB_SDK_VERSION = 'v25.0';
 
