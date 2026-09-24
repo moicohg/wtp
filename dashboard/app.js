@@ -17,7 +17,7 @@ const FUNCTIONS_URL = `${SUPABASE_URL}/functions/v1`;
 //   META_APP_ID:    developers.facebook.com → tu app → Configuración → Básica
 //   META_CONFIG_ID: Facebook Login for Business → Configuraciones (plantilla WhatsApp Embedded Signup)
 const META_APP_ID = '1350768843578933';
-const META_CONFIG_ID = '';
+const META_CONFIG_ID = '1336210358399020';
 const FB_SDK_VERSION = 'v25.0';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
