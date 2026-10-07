@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { detectAppointment } from '../_shared/appointments.ts';
 import { aiAllowed, getOrgUsage, storageAllowed } from '../_shared/limits.ts';
+import { understandMedia } from '../_shared/media-ai.ts';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -159,7 +160,7 @@ async function storeIncomingMedia(
   media: IncomingMedia,
   organizationId: string,
   prospectId: string
-): Promise<{ url: string } | null> {
+): Promise<{ url: string; bytes: Uint8Array; base64: string; mime: string } | null> {
   try {
     const resp = await fetch(`${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${encodeURIComponent(instanceId)}`, {
       method: 'POST',
@@ -183,7 +184,7 @@ async function storeIncomingMedia(
       console.error('[media] no se pudo subir a chat-media:', error.message);
       return null;
     }
-    return { url: supabase.storage.from('chat-media').getPublicUrl(path).data.publicUrl };
+    return { url: supabase.storage.from('chat-media').getPublicUrl(path).data.publicUrl, bytes, base64, mime };
   } catch (e) {
     console.error('[media] error descargando adjunto:', e);
     return null;
@@ -507,18 +508,36 @@ Deno.serve(async (req: Request) => {
     const usage = await getOrgUsage(supabase, vendor.organization_id);
     const roomForMedia = storageAllowed(usage);
     const stored = media && roomForMedia ? await storeIncomingMedia(instanceId, key.id as string, media, vendor.organization_id, prospect.id) : null;
+
+    // La IA lee el adjunto solo si el bot va a responder (clave, IA activa en el lead, cupo y plan vigente):
+    // nota de voz -> transcripción; imagen -> descripción. Si falla, queda guardado para una persona.
+    const botWillReply = Boolean(vendor.ai_api_key) && prospect.ia_enabled && aiAllowed(usage);
+    const understood =
+      stored && botWillReply && (media!.type === 'audio' || media!.type === 'image')
+        ? await understandMedia(vendor, media!.type as 'audio' | 'image', stored)
+        : null;
+
+    // chatText: lo que ve el equipo en el chat. aiText: lo que lee el bot.
+    const isVoice = media?.type === 'audio' && understood;
+    const chatText = isVoice ? `🎙 ${understood}` : [incomingText, understood && `🖼 ${understood}`].filter(Boolean).join('\n');
+    const aiText = isVoice
+      ? understood!
+      : understood
+        ? `[El cliente envió una imagen. Lo que muestra: ${understood}]${incomingText ? ` Mensaje del cliente: ${incomingText}` : ''}`
+        : incomingText;
+
     await supabase.from('messages').insert([
       {
         prospect_id: prospect.id,
         role: 'user',
-        content: incomingText || (media && !roomForMedia ? '📎 Adjunto no guardado: se alcanzó el límite de almacenamiento del plan' : ''),
+        content: chatText || (media && !roomForMedia ? '📎 Adjunto no guardado: se alcanzó el límite de almacenamiento del plan' : ''),
         media_url: stored?.url ?? null,
         media_type: stored ? media!.type : null,
       },
     ]);
 
-    // La IA solo lee texto: una imagen/audio sin pie queda guardado en el chat y atiende el humano.
-    if (!incomingText) return new Response('ok', { status: 200 });
+    // Sin texto que la IA pueda leer (audio sin transcribir, imagen sin pie ni descripción): atiende una persona.
+    if (!aiText) return new Response('ok', { status: 200 });
 
     if (!vendor.ai_api_key || !prospect.ia_enabled) {
       console.warn('[vendor] sin ai_api_key o ia_enabled=false — mensaje guardado pero sin respuesta IA. vendor_id:', vendor.id);
@@ -531,7 +550,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // 5. Llamar a la IA con la api_key del vendor
-    const aiReply = await callAI(vendor, history, incomingText, prospect);
+    const aiReply = await callAI(vendor, history, aiText, prospect);
 
     // 6. Guardar respuesta del asistente
     await supabase.from('messages').insert([
@@ -568,7 +587,7 @@ Deno.serve(async (req: Request) => {
 
     // 7b. ¿Quedó una cita? No bloquea la respuesta ya enviada.
     try {
-      await detectAppointment(supabase, vendor, prospect, history, incomingText, aiReply.reply);
+      await detectAppointment(supabase, vendor, prospect, history, aiText, aiReply.reply);
     } catch (e) {
       console.warn('[agenda] no se pudo detectar cita:', e);
     }
