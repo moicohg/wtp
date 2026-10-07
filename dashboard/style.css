@@ -79,6 +79,13 @@ body {
   flex-direction: column;
   gap: 8px;
   box-shadow: var(--shadow-xs);
+  /* Siempre del alto de la ventana y fijo al hacer scroll: el menú se desplaza por dentro
+     y el pie (cuenta, Configuración, Cerrar sesión) nunca queda fuera de la pantalla. */
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .main { flex: 1; min-width: 0; padding: 22px 32px 60px; background: var(--bg); }
@@ -137,7 +144,7 @@ body {
   padding: 10px 10px 4px;
 }
 
-.sidenav { display: flex; flex-direction: column; gap: 3px; }
+.sidenav { display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .sidenav-section { display: flex; flex-direction: column; }
 
 .sidenav-item, .sidenav-subitem {
@@ -198,6 +205,7 @@ body {
 .sidenav-children .sidenav-subitem { display: block; width: 100%; }
 
 .sidebar-footer {
+  flex-shrink: 0;
   margin-top: auto;
   padding-top: 14px;
   border-top: 1px solid var(--border-subtle);
@@ -2517,3 +2525,16 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 .channel-alert[hidden] { display: none; }
 .channel-alert button { border: 0; border-radius: var(--radius-sm); padding: 6px 14px; background: var(--danger); color: #fff; font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; }
 .channel-alert button:hover { background: var(--danger-dark); }
+
+/* Pantallas bajas (laptops chicas): menú más compacto para que quepa todo sin scroll */
+@media (max-height: 800px) {
+  .sidebar { padding: 12px 12px; gap: 4px; }
+  .sidenav-item { padding: 7px 12px; }
+  .sidebar-footer { padding-top: 8px; }
+  .account-chip { padding: 6px 8px; margin-bottom: 2px; }
+  .sidebar-footer-item { padding: 6px 10px; }
+}
+@media (max-height: 640px) {
+  .brand-tag { display: none; }
+  .nav-group-label { display: none; }
+}
