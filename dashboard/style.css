@@ -2408,3 +2408,6 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
   .ag-row { grid-template-columns: 26px minmax(0, 1fr) 70px; }
   .ag-row > :nth-child(3), .ag-row > :nth-child(4) { display: none; }
 }
+.ag-row > * { min-width: 0; }
+.ag-lead-cell > span:last-child { min-width: 0; overflow: hidden; }
+.ag-lead-cell small { max-width: none; }
