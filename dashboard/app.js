@@ -4776,7 +4776,8 @@ function openAgentModal(orgId = null) {
         .map((r) => `<option value="${r.id}" ${r.name === 'Vendedores' ? 'selected' : ''}>${escapeHtml(r.name)}</option>`)
         .join('') || '<option value="">Vendedores (por defecto)</option>';
 
-  const org = foreignOrg ? state.organizations.find((o) => o.id === orgId) : null;
+  // Siempre se muestra a qué empresa pertenecerá el usuario (la propia o, si eres super-admin, la elegida).
+  const org = foreignOrg ? state.organizations.find((o) => o.id === orgId) : state.me.organization;
   agentModalOrg.hidden = !org;
   agentModalOrg.textContent = org ? `Empresa: ${org.name}` : '';
 
