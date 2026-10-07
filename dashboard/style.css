@@ -191,6 +191,10 @@ body {
   font-weight: 700;
 }
 
+/* Cada canal en su propia fila, uno debajo de otro (el contenedor se llena desde app.js). */
+#sidenav-vendors { display: flex; flex-direction: column; gap: 2px; }
+.sidenav-children .sidenav-subitem { display: block; width: 100%; }
+
 .sidebar-footer {
   margin-top: auto;
   padding-top: 14px;
