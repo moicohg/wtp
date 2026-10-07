@@ -848,7 +848,7 @@ sidenavEl.addEventListener('click', (ev) => {
 // Sin ai_api_key ni meta_access_token: el cliente no necesita los secretos
 // (y el lockdown revoca su lectura). ai_key_set dice si hay clave.
 const VENDOR_COLUMNS =
-  'id, name, phone_number, channel_type, evolution_instance_id, meta_phone_number_id, meta_waba_id, meta_verified, evolution_connected, ' +
+  'id, name, phone_number, channel_type, evolution_instance_id, meta_phone_number_id, meta_waba_id, meta_verified, evolution_connected, evolution_disconnected_at, ' +
   'ai_provider, ai_model, ai_key_set, system_prompt, assigned_agent_id, keywords, organization_id, created_at, updated_at';
 
 async function loadVendors() {
@@ -872,6 +872,7 @@ async function loadVendors() {
   renderCanalesFilter();
 
   renderVendorCards();
+  renderChannelAlert();
   renderChannelLimit();
   renderSidenavVendors();
   renderCatalogVendorOptions();
@@ -2977,6 +2978,66 @@ function renderPlanBanner() {
       ? `Tu plan vence hoy (${fmtPlanDate(end)}). Renuévalo para no perder el acceso.`
       : `Tu plan vence en ${d} ${d === 1 ? 'día' : 'días'} (${fmtPlanDate(end)}). Renuévalo para no perder el acceso.`;
 }
+
+// ── Aviso de canales QR caídos ───────────────────────────────────────────────
+// Un canal QR que ya estuvo conectado y perdió la sesión (evolution_disconnected_at)
+// deja al bot sin responder. Se avisa con un banner; el aviso por WhatsApp lo manda
+// whatsapp-handler. Se consulta cada minuto porque vendors no se publica en Realtime
+// (por sus columnas con claves).
+
+const channelAlertEl = document.getElementById('channel-alert');
+const CHANNEL_HEALTH_MS = 60000;
+
+function renderChannelAlert() {
+  const mine = state.me?.isAdmin ? state.vendors : visibleVendors();
+  const down = mine.filter((v) => v.channel_type === 'evolution' && !v.evolution_connected && v.evolution_disconnected_at);
+  channelAlertEl.hidden = !down.length;
+  if (!down.length) return;
+  const canReconnect = can('config.manage_channels');
+  if (down.length === 1) {
+    const v = down[0];
+    channelAlertEl.innerHTML = `<span>⚠️ El canal <b>${escapeHtml(v.name)}</b> perdió la conexión de WhatsApp ${agTimeAgo(v.evolution_disconnected_at)}. El bot no está respondiendo.</span>
+      ${canReconnect ? `<button type="button" data-alert-reconnect="${v.id}">Reconectar con QR</button>` : ''}`;
+  } else {
+    channelAlertEl.innerHTML = `<span>⚠️ ${down.length} canales perdieron la conexión de WhatsApp: ${down.map((v) => `<b>${escapeHtml(v.name)}</b>`).join(', ')}. El bot no está respondiendo en ellos.</span>
+      ${canReconnect ? '<button type="button" data-alert-reconnect="">Ver canales</button>' : ''}`;
+  }
+}
+
+channelAlertEl.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('[data-alert-reconnect]');
+  if (!btn) return;
+  const id = btn.dataset.alertReconnect;
+  await setSection('canales-lista');
+  if (id) {
+    cnState.selectedId = id;
+    renderVendorCards();
+    reconnectVendorQr(id);
+  } else {
+    const first = state.vendors.find((v) => v.channel_type === 'evolution' && !v.evolution_connected && v.evolution_disconnected_at);
+    if (first) {
+      cnState.selectedId = first.id;
+      renderVendorCards();
+    }
+  }
+});
+
+async function pollChannelHealth() {
+  if (!state.me || document.hidden) return;
+  const { data, error } = await supabase.from('vendors').select('id, evolution_connected, evolution_disconnected_at').eq('channel_type', 'evolution');
+  if (error || !data) return;
+  let changed = false;
+  for (const row of data) {
+    const v = state.vendors.find((x) => x.id === row.id);
+    if (v && (v.evolution_connected !== row.evolution_connected || v.evolution_disconnected_at !== row.evolution_disconnected_at)) {
+      Object.assign(v, row);
+      changed = true;
+    }
+  }
+  renderChannelAlert();
+  if (changed) renderVendorCards();
+}
+setInterval(pollChannelHealth, CHANNEL_HEALTH_MS);
 
 // ── Límites del plan por empresa ─────────────────────────────────────────────
 

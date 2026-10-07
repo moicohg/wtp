@@ -141,7 +141,7 @@ Deno.serve(async (req: Request) => {
 
       if (state.data?.instance?.state === 'open') {
         if (!vendor.evolution_connected) {
-          await admin.from('vendors').update({ evolution_connected: true }).eq('id', vendor.id);
+          await admin.from('vendors').update({ evolution_connected: true, evolution_disconnected_at: null, evolution_alerted_at: null }).eq('id', vendor.id);
         }
         return json({ connected: true, qr: null });
       }

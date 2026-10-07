@@ -321,6 +321,103 @@ async function sendWhatsApp(instanceId: string, toPhone: string, text: string): 
   });
 }
 
+// ── Caída de la sesión de WhatsApp ───────────────────────────────────────────
+
+// 'open' reconecta; 'close' es la caída real (teléfono desvinculado, sesión cerrada).
+// 'connecting' es un reintento en curso y no cambia nada.
+async function handleConnectionUpdate(instanceId: string, state: string): Promise<void> {
+  if (state === 'open') {
+    await supabase
+      .from('vendors')
+      .update({ evolution_connected: true, evolution_disconnected_at: null, evolution_alerted_at: null })
+      .eq('evolution_instance_id', instanceId);
+    return;
+  }
+  if (state !== 'close') return;
+
+  const { data: v } = await supabase
+    .from('vendors')
+    .select('id, name, organization_id, phone_number, assigned_agent_id, evolution_disconnected_at, evolution_alerted_at')
+    .eq('evolution_instance_id', instanceId)
+    .maybeSingle();
+  if (!v) return;
+
+  // Se marca primero la caída y el aviso: así un evento repetido no manda el mensaje dos veces.
+  const now = new Date().toISOString();
+  const alreadyAlerted = Boolean(v.evolution_alerted_at);
+  await supabase
+    .from('vendors')
+    .update({
+      evolution_connected: false,
+      evolution_disconnected_at: v.evolution_disconnected_at ?? now,
+      evolution_alerted_at: v.evolution_alerted_at ?? now,
+    })
+    .eq('id', v.id);
+  if (alreadyAlerted) return;
+
+  try {
+    await alertDisconnection(v);
+  } catch (e) {
+    console.error('[desconexion] no se pudo enviar el aviso:', e);
+  }
+}
+
+// El canal caído no puede enviar: el aviso sale por otro canal QR conectado de la misma empresa.
+// Se prueba con cada canal candidato hasta que uno envíe (la marca "conectado" puede estar desfasada).
+// Si ninguno sirve queda el banner del panel (Meta solo permite texto libre dentro de las 24 h).
+async function alertDisconnection(v: {
+  id: string; name: string; organization_id: string; phone_number: string | null; assigned_agent_id: string | null;
+}): Promise<void> {
+  const [{ data: senders }, { data: agent }] = await Promise.all([
+    supabase
+      .from('vendors')
+      .select('evolution_instance_id')
+      .eq('organization_id', v.organization_id)
+      .eq('channel_type', 'evolution')
+      .eq('evolution_connected', true)
+      .neq('id', v.id),
+    v.assigned_agent_id
+      ? supabase.from('agents').select('phone').eq('id', v.assigned_agent_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const recipients = [...new Set([v.phone_number, agent?.phone].map(p => (p ?? '').replace(/\D/g, '')).filter(Boolean))];
+  if (!recipients.length) {
+    console.warn('[desconexion] el canal', v.name, 'no tiene teléfono de asesor a quien avisar');
+    return;
+  }
+  const instances = (senders ?? []).map(s => s.evolution_instance_id).filter(Boolean) as string[];
+  if (!instances.length) {
+    console.warn('[desconexion] no hay otro canal QR conectado para avisar; solo banner. Canal:', v.name);
+    return;
+  }
+
+  const text =
+    `⚠️ *El canal "${v.name}" perdió la conexión de WhatsApp.*\n\n` +
+    `El bot no está respondiendo a tus clientes. Entra al CRM → Canales y pulsa *Reconectar con QR* para volver a vincularlo.`;
+
+  for (const phone of recipients) {
+    let sent = false;
+    for (const instance of instances) {
+      try {
+        const resp = await fetch(`${EVOLUTION_API_URL}/message/sendText/${encodeURIComponent(instance)}`, {
+          method: 'POST',
+          headers: { apikey: EVOLUTION_API_KEY, 'content-type': 'application/json' },
+          body: JSON.stringify({ number: phone, text }),
+        });
+        if (resp.ok) {
+          sent = true;
+          break;
+        }
+        console.warn('[desconexion] el canal', instance, 'no pudo enviar el aviso:', resp.status, (await resp.text()).slice(0, 160));
+      } catch (e) {
+        console.warn('[desconexion] error enviando por', instance, e);
+      }
+    }
+    if (!sent) console.error('[desconexion] no se pudo avisar a', phone, 'por ningún canal conectado. Canal caído:', v.name);
+  }
+}
+
 // ── Handler principal ────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -339,12 +436,9 @@ Deno.serve(async (req: Request) => {
   const instanceId = body.instance as string;
   const data = body.data as Record<string, unknown> | undefined;
 
-  // Estado de la sesión de WhatsApp: mantiene al día si el QR sigue vinculado.
+  // Estado de la sesión de WhatsApp: mantiene al día si el QR sigue vinculado y avisa si se cae.
   if (body.event === 'connection.update' && instanceId && data?.state) {
-    await supabase
-      .from('vendors')
-      .update({ evolution_connected: data.state === 'open' })
-      .eq('evolution_instance_id', instanceId);
+    await handleConnectionUpdate(instanceId, String(data.state));
     return new Response('ok');
   }
 
