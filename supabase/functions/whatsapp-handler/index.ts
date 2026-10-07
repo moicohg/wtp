@@ -5,6 +5,7 @@ import { detectAppointment } from '../_shared/appointments.ts';
 
 interface Vendor {
   id: string;
+  organization_id: string;
   name: string;
   phone_number: string | null;
   evolution_instance_id: string;
@@ -123,6 +124,71 @@ const EVOLUTION_API_URL = Deno.env.get('EVOLUTION_API_URL')!;
 const EVOLUTION_API_KEY = Deno.env.get('EVOLUTION_API_KEY')!;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// ── Adjuntos entrantes ───────────────────────────────────────────────────────
+
+type MediaType = 'image' | 'video' | 'audio' | 'document';
+
+interface IncomingMedia {
+  type: MediaType;
+  caption: string;
+  fileName: string | null;
+}
+
+function extractMedia(msg: Record<string, any> | undefined): IncomingMedia | null {
+  if (!msg) return null;
+  if (msg.imageMessage) return { type: 'image', caption: msg.imageMessage.caption ?? '', fileName: null };
+  if (msg.videoMessage) return { type: 'video', caption: msg.videoMessage.caption ?? '', fileName: null };
+  if (msg.audioMessage) return { type: 'audio', caption: '', fileName: null };
+  if (msg.stickerMessage) return { type: 'image', caption: '', fileName: null };
+  const doc = msg.documentMessage ?? msg.documentWithCaptionMessage?.message?.documentMessage;
+  if (doc) return { type: 'document', caption: doc.caption ?? '', fileName: doc.fileName ?? null };
+  return null;
+}
+
+const MIME_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+  'video/mp4': 'mp4', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'application/pdf': 'pdf',
+};
+
+// Pide el archivo a Evolution (en base64) y lo sube al bucket público chat-media.
+async function storeIncomingMedia(
+  instanceId: string,
+  messageId: string,
+  media: IncomingMedia,
+  organizationId: string,
+  prospectId: string
+): Promise<{ url: string } | null> {
+  try {
+    const resp = await fetch(`${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${encodeURIComponent(instanceId)}`, {
+      method: 'POST',
+      headers: { apikey: EVOLUTION_API_KEY, 'content-type': 'application/json' },
+      body: JSON.stringify({ message: { key: { id: messageId } }, convertToMp4: false }),
+    });
+    if (!resp.ok) {
+      console.error('[media] Evolution respondió', resp.status, (await resp.text()).slice(0, 200));
+      return null;
+    }
+    const data = await resp.json();
+    const base64 = String(data.base64 ?? '').replace(/^data:[^;]+;base64,/, '');
+    if (!base64) return null;
+
+    const mime = String(data.mimetype ?? '').split(';')[0];
+    const ext = MIME_EXT[mime] ?? (media.fileName?.split('.').pop() || media.type);
+    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    const path = `${organizationId}/${prospectId}/in-${Date.now()}-${crypto.randomUUID().slice(0, 6)}.${ext}`;
+    const { error } = await supabase.storage.from('chat-media').upload(path, bytes, { contentType: mime || undefined });
+    if (error) {
+      console.error('[media] no se pudo subir a chat-media:', error.message);
+      return null;
+    }
+    return { url: supabase.storage.from('chat-media').getPublicUrl(path).data.publicUrl };
+  } catch (e) {
+    console.error('[media] error descargando adjunto:', e);
+    return null;
+  }
+}
+
 
 async function getOrCreateProspect(phone: string, vendorId: string): Promise<Prospect> {
   const { data: existing } = await supabase
@@ -295,7 +361,9 @@ Deno.serve(async (req: Request) => {
     return new Response('ok'); // ignorar grupos
   }
 
-  const phone = remoteJid.replace('@s.whatsapp.net', '');
+  // WhatsApp a veces identifica al contacto con un LID (...@lid) y deja su número real en remoteJidAlt.
+  const realJid = remoteJid.endsWith('@lid') && typeof key.remoteJidAlt === 'string' ? key.remoteJidAlt : remoteJid;
+  const phone = realJid.replace(/@.*$/, '');
 
   const messageObj = data.message as Record<string, unknown> | undefined;
   const messageText =
@@ -303,8 +371,12 @@ Deno.serve(async (req: Request) => {
     ((messageObj?.extendedTextMessage as Record<string, unknown>)?.text as string) ||
     '';
 
-  if (!messageText.trim()) {
-    return new Response('ok'); // ignorar mensajes sin texto (audio, imagen, etc.)
+  const media = extractMedia(messageObj);
+  const caption = media?.caption ?? '';
+  const incomingText = messageText.trim() || caption.trim();
+
+  if (!incomingText && !media) {
+    return new Response('ok'); // ignorar mensajes sin texto ni adjunto (reacciones, etc.)
   }
 
   try {
@@ -335,9 +407,20 @@ Deno.serve(async (req: Request) => {
     const history = (historyRows ?? []) as Message[];
 
     // 4. Guardar mensaje del usuario ANTES de la IA (persiste aunque la IA falle)
+    // Si trae adjunto, se baja de Evolution y se sube a chat-media para que el panel lo muestre.
+    const stored = media ? await storeIncomingMedia(instanceId, key.id as string, media, vendor.organization_id, prospect.id) : null;
     await supabase.from('messages').insert([
-      { prospect_id: prospect.id, role: 'user', content: messageText },
+      {
+        prospect_id: prospect.id,
+        role: 'user',
+        content: incomingText,
+        media_url: stored?.url ?? null,
+        media_type: stored ? media!.type : null,
+      },
     ]);
+
+    // La IA solo lee texto: una imagen/audio sin pie queda guardado en el chat y atiende el humano.
+    if (!incomingText) return new Response('ok', { status: 200 });
 
     if (!vendor.ai_api_key || !prospect.ia_enabled) {
       console.warn('[vendor] sin ai_api_key o ia_enabled=false — mensaje guardado pero sin respuesta IA. vendor_id:', vendor.id);
@@ -345,7 +428,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // 5. Llamar a la IA con la api_key del vendor
-    const aiReply = await callAI(vendor, history, messageText, prospect);
+    const aiReply = await callAI(vendor, history, incomingText, prospect);
 
     // 6. Guardar respuesta del asistente
     await supabase.from('messages').insert([
@@ -382,7 +465,7 @@ Deno.serve(async (req: Request) => {
 
     // 7b. ¿Quedó una cita? No bloquea la respuesta ya enviada.
     try {
-      await detectAppointment(supabase, vendor, prospect, history, messageText, aiReply.reply);
+      await detectAppointment(supabase, vendor, prospect, history, incomingText, aiReply.reply);
     } catch (e) {
       console.warn('[agenda] no se pudo detectar cita:', e);
     }
