@@ -30,6 +30,10 @@
           <span class="nav-icon">📊</span>Dashboard
         </button>
 
+        <button class="sidenav-item" data-section="agenda" data-perm="agenda.view_priority_queue" type="button">
+          <span class="nav-icon">🗓</span>Agenda<span class="nav-badge" id="nav-agenda-badge" hidden></span>
+        </button>
+
         <div class="sidenav-section" id="sidenav-canales-section">
           <button class="sidenav-item is-parent is-active" data-section="canales-lista" data-perm-any="config.manage_channels leads.view" type="button">
             <span class="nav-icon">💬</span>Canales
@@ -199,6 +203,38 @@
 
         <div id="automations-list" class="products-grid">
           <p class="muted">Cargando automatizaciones…</p>
+        </div>
+      </section>
+
+      <!-- ═══ Vista: Agenda inteligente ═══════════════════════════════════ -->
+      <section id="view-agenda" class="view" hidden>
+        <div class="ag-head">
+          <div>
+            <div class="ag-date" id="ag-date-label"></div>
+            <h2 class="ag-title">Agenda Inteligente</h2>
+            <p class="ag-sub">Tu copiloto del día: a quién atender primero y qué citas tienes.</p>
+          </div>
+          <div class="ag-head-actions">
+            <div class="ag-daynav">
+              <button type="button" id="ag-prev" aria-label="Día anterior">‹</button>
+              <button type="button" id="ag-today">Hoy</button>
+              <button type="button" id="ag-next" aria-label="Día siguiente">›</button>
+            </div>
+            <button type="button" class="btn" id="ag-calendar-btn">📅 Calendario</button>
+            <button type="button" class="btn" id="ag-refresh" title="Actualizar" aria-label="Actualizar">⟳</button>
+            <button type="button" class="btn btn-primary" id="ag-new-btn" data-perm="agenda.manage">+ Nueva cita</button>
+          </div>
+        </div>
+        <div class="ag-kpis" id="ag-kpis"></div>
+        <div class="ag-grid">
+          <div class="ag-main">
+            <div class="ag-card" id="ag-focus"></div>
+            <div class="ag-card" id="ag-queue"></div>
+          </div>
+          <aside class="ag-side">
+            <div class="ag-card ag-pending" id="ag-pending"></div>
+            <div class="ag-card" id="ag-day"></div>
+          </aside>
         </div>
       </section>
 
@@ -1669,6 +1705,59 @@
       <h2 id="blocked-title">Acceso deshabilitado</h2>
       <p class="muted" id="blocked-text">Tu usuario no tiene acceso al panel. Contacta al administrador de tu empresa.</p>
       <button type="button" class="btn btn-primary" id="blocked-logout-btn">Cerrar sesión</button>
+    </div>
+  </div>
+
+  <!-- Modal: cita (nueva / editar) -->
+  <div id="ag-appt-overlay" class="overlay" hidden>
+    <div class="modal">
+      <div class="drawer-header">
+        <h2 id="ag-appt-title">Nueva cita</h2>
+        <button class="btn-icon" id="ag-appt-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="ag-appt-form" class="settings-form">
+        <label>
+          Lead
+          <select name="prospect_id" id="ag-appt-prospect" required></select>
+        </label>
+        <label>
+          Tipo
+          <select name="title">
+            <option>Visita</option>
+            <option>Llamada</option>
+            <option>Reunión</option>
+          </select>
+        </label>
+        <label>
+          Fecha y hora
+          <input name="when" type="datetime-local" required />
+        </label>
+        <label>
+          Notas <span class="hint">(opcional)</span>
+          <textarea name="notes" rows="3" placeholder="Dirección, a quién preguntar, qué llevar…"></textarea>
+        </label>
+        <div class="settings-actions settings-actions-left">
+          <button type="submit" class="btn btn-primary" id="ag-appt-save">Guardar</button>
+          <span id="ag-appt-status" class="settings-status"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: calendario mensual -->
+  <div id="ag-cal-overlay" class="overlay" hidden>
+    <div class="modal">
+      <div class="drawer-header">
+        <h2 id="ag-cal-title">Calendario</h2>
+        <button class="btn-icon" id="ag-cal-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="ag-cal">
+        <div class="ag-cal-nav">
+          <button type="button" class="btn" id="ag-cal-prev">‹</button>
+          <button type="button" class="btn" id="ag-cal-next">›</button>
+        </div>
+        <div class="ag-cal-grid" id="ag-cal-grid"></div>
+      </div>
     </div>
   </div>
 

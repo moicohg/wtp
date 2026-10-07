@@ -336,6 +336,7 @@ const sidenavVendorsEl = document.getElementById('sidenav-vendors');
 const topbarTitle = document.getElementById('topbar-title');
 
 const viewDashboard = document.getElementById('view-dashboard');
+const viewAgenda = document.getElementById('view-agenda');
 const dashKpiLeads = document.getElementById('dash-kpi-leads');
 const dashKpiVentas = document.getElementById('dash-kpi-ventas');
 const dashKpiDepositar = document.getElementById('dash-kpi-depositar');
@@ -713,6 +714,7 @@ function syncSidenavActive() {
 // todos modos vía RLS; esto solo evita mostrar pantallas vacías).
 const SECTION_PERMS = {
   dashboard: ['analytics.dashboard'],
+  agenda: ['agenda.view_priority_queue'],
   'canales-lista': ['config.manage_channels'],
   leads: ['leads.view'],
   'bandeja-global': ['leads.view'],
@@ -746,6 +748,7 @@ async function setSection(section) {
   const isInbox = section === 'bandeja-global';
   const isChannel = section.startsWith('vendor:');
   const isDashboard = section === 'dashboard';
+  const isAgenda = section === 'agenda';
   const isProductos = section === 'productos';
   const isCatalogo = section === 'catalogo-ia';
   const isAutomatizacion = section === 'automatizacion';
@@ -758,6 +761,7 @@ async function setSection(section) {
     !isInbox &&
     !isChannel &&
     !isDashboard &&
+    !isAgenda &&
     !isProductos &&
     !isCatalogo &&
     !isAutomatizacion &&
@@ -766,6 +770,7 @@ async function setSection(section) {
     !isEmpresas;
 
   viewDashboard.hidden = !isDashboard;
+  viewAgenda.hidden = !isAgenda;
   viewCanales.hidden = !isCanales;
   viewLeads.hidden = !isLeads;
   viewInbox.hidden = !isInbox;
@@ -785,6 +790,9 @@ async function setSection(section) {
   if (isDashboard) {
     topbarTitle.textContent = 'Dashboard';
     await loadDashboard();
+  } else if (isAgenda) {
+    topbarTitle.textContent = 'Agenda';
+    await loadAgenda();
   } else if (isCanales) {
     topbarTitle.textContent = 'Canales';
   } else if (isLeads) {
@@ -5691,6 +5699,7 @@ document.addEventListener('keydown', (ev) => {
 async function startApp() {
   await Promise.all([loadAgents(), loadVendors(), loadCustomFields(), loadRoles()]);
   setSection(defaultSection());
+  if (can('agenda.view_priority_queue')) loadAgenda().catch(() => {});
   if (state.vendorId) {
     await loadProspects();
     subscribeVendor(state.vendorId);
@@ -5700,6 +5709,548 @@ async function startApp() {
     }</td></tr>`;
   }
 }
+
+// ── Agenda inteligente ───────────────────────────────────────────────────────
+// Todo sale de la base: prospect_inbox (último mensaje y canal), prospects (urgencia,
+// posponer/atendido) y appointments. La prioridad se calcula aquí con cuatro señales
+// 0-100: urgencia (calificación y horizonte), valor (presupuesto frente al mayor de la
+// cola), frescura (cuánto hace que escribió) y momentum (score de la IA).
+
+const agendaState = {
+  rows: [], // leads visibles (inbox + campos de agenda)
+  queue: [], // leads en cola, ya ordenados por prioridad
+  appts: [],
+  focusId: null,
+  day: startOfDay(new Date()),
+  filter: 'todos',
+  showAll: false,
+  calMonth: startOfDay(new Date()),
+  editingApptId: null,
+  channel: null,
+};
+
+const agKpisEl = document.getElementById('ag-kpis');
+const agFocusEl = document.getElementById('ag-focus');
+const agQueueEl = document.getElementById('ag-queue');
+const agPendingEl = document.getElementById('ag-pending');
+const agDayEl = document.getElementById('ag-day');
+const agDateLabelEl = document.getElementById('ag-date-label');
+const agBadgeEl = document.getElementById('nav-agenda-badge');
+const agApptOverlay = document.getElementById('ag-appt-overlay');
+const agApptForm = document.getElementById('ag-appt-form');
+const agApptStatus = document.getElementById('ag-appt-status');
+const agCalOverlay = document.getElementById('ag-cal-overlay');
+
+function startOfDay(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+const sameDay = (a, b) => startOfDay(a).getTime() === startOfDay(b).getTime();
+const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+function agTimeAgo(ts) {
+  const min = Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 60000));
+  if (min < 1) return 'hace un momento';
+  if (min < 60) return `hace ${min} min`;
+  if (min < 1440) return `hace ${Math.round(min / 60)} h`;
+  return `hace ${Math.round(min / 1440)} d`;
+}
+
+function agTime(ts) {
+  return new Date(ts).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
+const MONEY_PREFIX = { PEN: 'S/', USD: 'US$', MXN: 'MX$', EUR: '€' };
+function agMoney(n, currency) {
+  const prefix = MONEY_PREFIX[currency] ?? 'S/';
+  return `${prefix} ${Math.round(n).toLocaleString('es-PE')}`;
+}
+
+function agDisplayName(r) {
+  return r.nombre || r.phone;
+}
+
+function agFormatPhone(phone) {
+  const d = String(phone).replace(/\D/g, '');
+  return d.length > 9 ? `+${d.slice(0, d.length - 9)} ${d.slice(-9, -6)} ${d.slice(-6, -3)} ${d.slice(-3)}` : `+${d}`;
+}
+
+const heatOf = (r) => (r.label === 'CALIFICADO' ? 'caliente' : r.label === 'TIBIO' ? 'tibio' : 'frio');
+
+// ── Carga ────────────────────────────────────────────────────────────────────
+
+async function loadAgenda() {
+  const since = new Date(Date.now() - 40 * 86400000).toISOString();
+  const [inbox, extra, appts] = await Promise.all([
+    supabase.from('prospect_inbox').select('*'),
+    supabase.from('prospects').select('id, calif_urgencia, snoozed_until, attended_at'),
+    supabase.from('appointments').select('*').neq('status', 'cancelada').gte('scheduled_at', since).order('scheduled_at'),
+  ]);
+  const error = inbox.error || extra.error || appts.error;
+  if (error) {
+    agFocusEl.innerHTML = `<p class="muted">No se pudo cargar la agenda: ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  const extraById = new Map(extra.data.map((p) => [p.id, p]));
+  agendaState.rows = inbox.data.map((r) => ({ ...r, ...(extraById.get(r.id) ?? {}) }));
+  agendaState.appts = appts.data;
+  computeAgendaQueue();
+  renderAgenda();
+  subscribeAgenda();
+}
+
+function subscribeAgenda() {
+  if (agendaState.channel) return;
+  const refresh = () => {
+    if (state.section === 'agenda') loadAgenda();
+  };
+  agendaState.channel = supabase
+    .channel('agenda')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, refresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'prospects' }, refresh)
+    .subscribe();
+}
+
+// ── Prioridad ────────────────────────────────────────────────────────────────
+
+function computeAgendaQueue() {
+  const now = Date.now();
+  const open = agendaState.rows.filter((r) => {
+    if (r.label === 'DESCARTADO' || isVenta(r)) return false;
+    if (r.snoozed_until && new Date(r.snoozed_until).getTime() > now) return false;
+    const lastAt = r.last_message_at ? new Date(r.last_message_at).getTime() : 0;
+    if (r.attended_at && new Date(r.attended_at).getTime() >= lastAt) return false;
+    return true;
+  });
+  const maxBudget = Math.max(0, ...open.map((r) => Number(r.presupuesto) || 0));
+
+  for (const r of open) {
+    const hours = r.horizonte_meses;
+    const urgencia = r.calif_urgencia
+      ? Math.min(100, (r.calif_urgencia / 25) * 100)
+      : hours == null ? 0 : hours <= 2 ? 100 : hours <= 6 ? 60 : hours <= 12 ? 30 : 0;
+    const valor = maxBudget ? Math.round(((Number(r.presupuesto) || 0) / maxBudget) * 100) : 0;
+    const refTs = r.last_message_at ?? r.created_at;
+    const mins = (now - new Date(refTs).getTime()) / 60000;
+    const frescura = mins <= 5 ? 100 : mins <= 60 ? 80 : mins <= 1440 ? 50 : mins <= 4320 ? 25 : 0;
+    const momentum = Math.max(0, Math.min(100, r.score ?? 0));
+    r.signals = { urgencia: Math.round(urgencia), valor, frescura, momentum };
+    r.priority = Math.round(urgencia * 0.35 + valor * 0.25 + frescura * 0.25 + momentum * 0.15);
+    r.reasons = agReasons(r, mins);
+  }
+  open.sort((a, b) => b.priority - a.priority || new Date(b.last_message_at ?? 0) - new Date(a.last_message_at ?? 0));
+  agendaState.queue = open;
+  if (!open.some((r) => r.id === agendaState.focusId)) agendaState.focusId = open[0]?.id ?? null;
+}
+
+function agReasons(r, mins) {
+  const out = [];
+  if (mins <= 5) out.push(['⏱', 'Lead recién entrado', 'ventana crítica de los primeros 5 minutos']);
+  else if (r.last_message_role === 'user') out.push(['💬', 'Esperando respuesta', `escribió ${agTimeAgo(r.last_message_at)}`]);
+  if (r.label === 'CALIFICADO') out.push(['🔥', 'Lead caliente', `calificado por la IA con score ${r.score ?? 0}/100`]);
+  if (r.horizonte_meses != null && r.horizonte_meses <= 3) out.push(['⚡', 'Urgencia alta', `quiere cerrar en ${r.horizonte_meses} ${r.horizonte_meses === 1 ? 'mes' : 'meses'}`]);
+  if (r.presupuesto) out.push(['💰', 'Presupuesto definido', agMoney(r.presupuesto, r.presupuesto_moneda)]);
+  const pending = agendaState.appts.find((a) => a.prospect_id === r.id && a.status === 'por_confirmar');
+  if (pending) out.push(['🗓', 'Cita por confirmar', `${agTimeAgo(pending.created_at)} la IA la detectó`]);
+  if (!out.length) out.push(['📌', 'Seguimiento pendiente', `última actividad ${agTimeAgo(r.last_message_at ?? r.created_at)}`]);
+  return out.slice(0, 3);
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+
+function renderAgenda() {
+  agDateLabelEl.textContent = capitalize(agendaState.day.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' }));
+  renderAgendaKpis();
+  renderAgendaFocus();
+  renderAgendaQueue();
+  renderAgendaPending();
+  renderAgendaDay();
+  const n = agendaState.queue.length;
+  agBadgeEl.textContent = n;
+  agBadgeEl.hidden = !n;
+}
+
+function renderAgendaKpis() {
+  const q = agendaState.queue;
+  const hot = q.filter((r) => heatOf(r) === 'caliente').length;
+  const today = agendaState.appts.filter((a) => a.status !== 'por_confirmar' && sameDay(a.scheduled_at, new Date()));
+  const pending = agendaState.appts.filter((a) => a.status === 'por_confirmar');
+  const upcoming = today.find((a) => new Date(a.scheduled_at) > new Date());
+
+  // "En juego": suma de presupuestos de la cola, en la moneda que más se repite.
+  const byCurrency = {};
+  for (const r of q) if (r.presupuesto) byCurrency[r.presupuesto_moneda || 'PEN'] = (byCurrency[r.presupuesto_moneda || 'PEN'] ?? 0) + Number(r.presupuesto);
+  const [cur, total] = Object.entries(byCurrency).sort((a, b) => b[1] - a[1])[0] ?? ['PEN', 0];
+
+  const cards = [
+    ['≡', q.length, 'Leads en cola', hot ? `${hot} ${hot === 1 ? 'caliente' : 'calientes'}` : 'Ninguno caliente todavía'],
+    ['🗓', today.length, 'Citas de hoy', upcoming ? `Próxima a las ${agTime(upcoming.scheduled_at)}` : today.length ? 'Ya pasaron' : 'Sin citas agendadas'],
+    ['❗', pending.length, 'Por confirmar', 'Detectadas por IA'],
+    ['💼', agMoney(total, cur), 'En juego hoy', 'Suma de montos en cola'],
+  ];
+  agKpisEl.innerHTML = cards
+    .map(
+      ([icon, value, label, sub]) => `
+      <div class="ag-kpi">
+        <span class="ag-kpi-icon">${icon}</span>
+        <div><div class="ag-kpi-top"><b>${value}</b> ${label}</div><div class="ag-kpi-sub">${escapeHtml(sub)}</div></div>
+      </div>`
+    )
+    .join('');
+}
+
+function agRing(value) {
+  const r = 30;
+  const c = 2 * Math.PI * r;
+  return `<svg class="ag-ring" viewBox="0 0 72 72" aria-hidden="true">
+    <circle cx="36" cy="36" r="${r}" fill="none" stroke="var(--border)" stroke-width="6"/>
+    <circle cx="36" cy="36" r="${r}" fill="none" stroke="var(--brand)" stroke-width="6" stroke-linecap="round"
+      stroke-dasharray="${(c * value) / 100} ${c}" transform="rotate(-90 36 36)"/>
+    <text x="36" y="42" text-anchor="middle" class="ag-ring-num">${value}</text></svg>`;
+}
+
+function renderAgendaFocus() {
+  const q = agendaState.queue;
+  const idx = q.findIndex((r) => r.id === agendaState.focusId);
+  const r = q[idx];
+  if (!r) {
+    agFocusEl.innerHTML = '<div class="ag-empty"><b>Todo al día 🎉</b><p>No tienes leads pendientes en la cola. Cuando llegue un mensaje nuevo aparecerá aquí.</p></div>';
+    return;
+  }
+  const s = r.signals;
+  const bar = (label, v) => `<div class="ag-bar"><div class="ag-bar-top"><span>${label}</span><b>${v}</b></div><div class="ag-bar-track"><div style="width:${v}%"></div></div></div>`;
+  const digits = String(r.phone).replace(/\D/g, '');
+  agFocusEl.innerHTML = `
+    <div class="ag-focus-head">
+      <span class="ag-eyebrow">⚡ SIGUIENTE MEJOR ACCIÓN</span>
+      <div class="ag-pager"><button type="button" data-ag-focus="-1" ${idx === 0 ? 'disabled' : ''}>‹</button><span>${idx + 1} de ${q.length}</span><button type="button" data-ag-focus="1" ${idx === q.length - 1 ? 'disabled' : ''}>›</button></div>
+    </div>
+    <div class="ag-focus-body">
+      <div class="ag-focus-lead">
+        <div class="ag-lead-top">
+          <span class="ag-avatar ag-avatar-lg">${escapeHtml(digits.slice(0, 2) || '?')}</span>
+          <div>
+            <div class="ag-lead-name">${escapeHtml(agDisplayName(r))} <span class="ag-chip">${escapeHtml(r.etapa || 'Nuevo')}</span></div>
+            <div class="ag-lead-meta">${escapeHtml(agFormatPhone(r.phone))} · 💬 ${escapeHtml(r.vendor_name ?? '')}</div>
+          </div>
+        </div>
+        <div class="ag-chips">
+          <span class="ag-chip">🧠 Score ${r.score ?? 0}</span>
+          ${r.zona ? `<span class="ag-chip">📍 ${escapeHtml(r.zona)}</span>` : ''}
+          ${r.presupuesto ? `<span class="ag-chip">💰 ${agMoney(r.presupuesto, r.presupuesto_moneda)}</span>` : ''}
+        </div>
+        <div class="ag-why-title">POR QUÉ AHORA</div>
+        ${r.reasons.map(([i, b, t]) => `<div class="ag-why"><span>${i}</span><div><b>${escapeHtml(b)}:</b> ${escapeHtml(t)}</div></div>`).join('')}
+        ${r.last_message ? `<div class="ag-last">“${escapeHtml(String(r.last_message).slice(0, 140))}”</div>` : ''}
+      </div>
+      <div class="ag-focus-score">
+        <div class="ag-priority">${agRing(r.priority)}<div><b>Prioridad</b><div class="ag-kpi-sub">#${idx + 1} de tu cola hoy</div></div></div>
+        ${bar('Urgencia', s.urgencia)}${bar('Valor', s.valor)}${bar('Frescura', s.frescura)}${bar('Momentum', s.momentum)}
+      </div>
+    </div>
+    <div class="ag-actions" data-id="${r.id}">
+      <button type="button" class="ag-btn-primary" data-ag-act="open">💬 Abrir conversación</button>
+      <a class="ag-btn" href="tel:+${digits}">📞 Llamar</a>
+      <button type="button" class="ag-btn" data-ag-act="schedule" ${can('agenda.manage') ? '' : 'hidden'}>🗓 Agendar cita</button>
+      <button type="button" class="ag-btn" data-ag-act="attended">✓ Atendido</button>
+      <span class="ag-snooze-wrap">
+        <button type="button" class="ag-btn ag-btn-sq" data-ag-act="snooze-menu" title="Posponer" aria-label="Posponer">⏰</button>
+        <div class="ag-snooze-menu" hidden>
+          <button type="button" data-ag-snooze="1">1 hora</button>
+          <button type="button" data-ag-snooze="3">3 horas</button>
+          <button type="button" data-ag-snooze="tomorrow">Mañana 9:00</button>
+        </div>
+      </span>
+    </div>`;
+}
+
+function renderAgendaQueue() {
+  const all = agendaState.queue;
+  const count = (h) => all.filter((r) => heatOf(r) === h).length;
+  const tabs = [['todos', 'Todos', all.length], ['caliente', 'Calientes', count('caliente')], ['tibio', 'Tibios', count('tibio')], ['frio', 'Fríos', count('frio')]];
+  const list = agendaState.filter === 'todos' ? all : all.filter((r) => heatOf(r) === agendaState.filter);
+  const shown = agendaState.showAll ? list : list.slice(0, 6);
+  agQueueEl.innerHTML = `
+    <div class="ag-queue-head">
+      <h3>Cola priorizada <span class="ag-count">${all.length}</span></h3>
+      <div class="ag-tabs">${tabs.map(([k, l, n]) => `<button type="button" class="${agendaState.filter === k ? 'is-active' : ''}" data-ag-filter="${k}">${l} <span>${n}</span></button>`).join('')}</div>
+    </div>
+    ${list.length ? `
+    <div class="ag-table">
+      <div class="ag-row ag-row-head"><span>#</span><span>LEAD</span><span>ETAPA</span><span>PRIORIDAD</span><span></span></div>
+      ${shown.map((r) => {
+        const pos = all.indexOf(r) + 1;
+        const digits = String(r.phone).replace(/\D/g, '');
+        return `<div class="ag-row ${r.id === agendaState.focusId ? 'is-focus' : ''}" data-id="${r.id}">
+          <span class="ag-pos">${pos}</span>
+          <span class="ag-lead-cell"><span class="ag-avatar">${escapeHtml(digits.slice(0, 2) || '?')}</span>
+            <span><b>${escapeHtml(agDisplayName(r))}</b>${r.id === agendaState.focusId ? ' <span class="ag-focus-tag">EN FOCO</span>' : ''}<small>${escapeHtml(r.reasons[0][1])}: ${escapeHtml(r.reasons[0][2])}</small></span></span>
+          <span><span class="ag-chip">${escapeHtml(r.etapa || 'Nuevo')}</span></span>
+          <span class="ag-prio"><b>${r.priority}</b><i><u style="width:${r.priority}%"></u></i></span>
+          <span class="ag-row-actions"><button type="button" class="ag-btn ag-btn-sq" data-ag-row="open" title="Abrir conversación" aria-label="Abrir conversación">💬</button><button type="button" class="ag-btn ag-btn-sq" data-ag-row="attended" title="Marcar como atendido" aria-label="Marcar como atendido">✓</button></span>
+        </div>`;
+      }).join('')}
+    </div>
+    ${list.length > 6 ? `<button type="button" class="ag-more" data-ag-more>${agendaState.showAll ? 'Ver menos' : `Ver ${list.length - 6} leads más`} ${agendaState.showAll ? '⌃' : '⌄'}</button>` : ''}`
+    : '<div class="ag-empty"><p>No hay leads en esta categoría.</p></div>'}`;
+}
+
+function agApptName(a) {
+  const r = agendaState.rows.find((x) => x.id === a.prospect_id);
+  return r ? agDisplayName(r) : 'Lead';
+}
+
+function renderAgendaPending() {
+  const pending = agendaState.appts.filter((a) => a.status === 'por_confirmar');
+  const manage = can('agenda.manage');
+  agPendingEl.hidden = !pending.length;
+  if (!pending.length) return;
+  agPendingEl.innerHTML = `
+    <div class="ag-pending-head"><span class="ag-kpi-icon ag-warn-icon">✨</span><div><b>Por confirmar (${pending.length})</b><div class="ag-kpi-sub">La IA detectó estas citas en conversaciones</div></div></div>
+    ${pending.map((a) => {
+      const r = agendaState.rows.find((x) => x.id === a.prospect_id);
+      const d = new Date(a.scheduled_at);
+      const when = sameDay(d, new Date()) ? '' : d.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric', month: 'short' });
+      return `<div class="ag-pend-item" data-appt="${a.id}">
+        <div class="ag-pend-time"><b>${agTime(a.scheduled_at).split(' ')[0]}</b><small>${agTime(a.scheduled_at).split(' ').slice(1).join(' ')}</small><small>${escapeHtml(when)}</small></div>
+        <div class="ag-pend-body">
+          <b>${escapeHtml(a.title)} — ${escapeHtml(agApptName(a))}</b>
+          <div class="ag-kpi-sub">${escapeHtml(agFormatPhone(r?.phone ?? ''))} · ${escapeHtml(r?.vendor_name ?? '')}</div>
+          ${a.source_quote ? `<div class="ag-quote">“${escapeHtml(a.source_quote)}”</div>` : ''}
+          ${manage ? `<div class="ag-pend-actions"><button type="button" class="ag-btn-ok" data-ag-appt="confirm">✓ Confirmar</button><button type="button" class="ag-btn" data-ag-appt="edit">✎ Editar</button><button type="button" class="ag-btn ag-btn-sq" data-ag-appt="cancel" title="Descartar" aria-label="Descartar">✕</button></div>` : ''}
+        </div>
+      </div>`;
+    }).join('')}`;
+}
+
+function renderAgendaDay() {
+  const day = agendaState.day;
+  const isToday = sameDay(day, new Date());
+  const list = agendaState.appts.filter((a) => a.status !== 'por_confirmar' && sameDay(a.scheduled_at, day));
+  const manage = can('agenda.manage');
+  const title = isToday ? 'Citas de hoy' : `Citas del ${day.toLocaleDateString('es-PE', { day: 'numeric', month: 'long' })}`;
+  agDayEl.innerHTML = `
+    <div class="ag-day-head"><h3>${title}</h3><span class="ag-count">${list.length}</span></div>
+    ${list.length ? list.map((a) => `
+      <div class="ag-day-item ${a.status === 'completada' ? 'is-done' : ''}" data-appt="${a.id}">
+        <div class="ag-pend-time"><b>${agTime(a.scheduled_at).split(' ')[0]}</b><small>${agTime(a.scheduled_at).split(' ').slice(1).join(' ')}</small></div>
+        <div class="ag-pend-body"><b>${escapeHtml(a.title)} — ${escapeHtml(agApptName(a))}</b>${a.notes ? `<div class="ag-kpi-sub">${escapeHtml(a.notes)}</div>` : ''}</div>
+        ${manage ? `<div class="ag-pend-actions">${a.status === 'completada' ? '<span class="ag-chip">Realizada</span>' : '<button type="button" class="ag-btn ag-btn-sq" data-ag-appt="done" title="Marcar como realizada" aria-label="Marcar como realizada">✓</button>'}<button type="button" class="ag-btn ag-btn-sq" data-ag-appt="edit" title="Editar" aria-label="Editar">✎</button><button type="button" class="ag-btn ag-btn-sq" data-ag-appt="cancel" title="Cancelar cita" aria-label="Cancelar cita">✕</button></div>` : ''}
+      </div>`).join('') : '<div class="ag-empty"><p>Sin citas para este día.</p></div>'}`;
+}
+
+// ── Acciones de la cola ──────────────────────────────────────────────────────
+
+async function agUpdateProspect(id, patch) {
+  const { error } = await supabase.from('prospects').update(patch).eq('id', id);
+  if (error) {
+    alert(`No se pudo actualizar: ${error.message}`);
+    return false;
+  }
+  await loadAgenda();
+  return true;
+}
+
+function agOpenConversation(id) {
+  const r = agendaState.rows.find((x) => x.id === id);
+  if (r) openDrawer(r);
+}
+
+function agSnoozeUntil(kind) {
+  if (kind === 'tomorrow') {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return d;
+  }
+  return new Date(Date.now() + Number(kind) * 3600000);
+}
+
+agFocusEl.addEventListener('click', async (ev) => {
+  const pager = ev.target.closest('[data-ag-focus]');
+  if (pager) {
+    const q = agendaState.queue;
+    const i = q.findIndex((r) => r.id === agendaState.focusId) + Number(pager.dataset.agFocus);
+    if (q[i]) {
+      agendaState.focusId = q[i].id;
+      renderAgendaFocus();
+      renderAgendaQueue();
+    }
+    return;
+  }
+  const snooze = ev.target.closest('[data-ag-snooze]');
+  const act = ev.target.closest('[data-ag-act]');
+  const id = agendaState.focusId;
+  if (snooze) {
+    await agUpdateProspect(id, { snoozed_until: agSnoozeUntil(snooze.dataset.agSnooze).toISOString() });
+  } else if (act?.dataset.agAct === 'snooze-menu') {
+    act.parentElement.querySelector('.ag-snooze-menu').hidden ^= true;
+  } else if (act?.dataset.agAct === 'open') {
+    agOpenConversation(id);
+  } else if (act?.dataset.agAct === 'schedule') {
+    openApptModal({ prospectId: id });
+  } else if (act?.dataset.agAct === 'attended') {
+    await agUpdateProspect(id, { attended_at: new Date().toISOString() });
+  }
+});
+
+agQueueEl.addEventListener('click', async (ev) => {
+  const filter = ev.target.closest('[data-ag-filter]');
+  if (filter) {
+    agendaState.filter = filter.dataset.agFilter;
+    agendaState.showAll = false;
+    return renderAgendaQueue();
+  }
+  if (ev.target.closest('[data-ag-more]')) {
+    agendaState.showAll = !agendaState.showAll;
+    return renderAgendaQueue();
+  }
+  const row = ev.target.closest('.ag-row[data-id]');
+  if (!row) return;
+  const act = ev.target.closest('[data-ag-row]')?.dataset.agRow;
+  if (act === 'open') return agOpenConversation(row.dataset.id);
+  if (act === 'attended') return agUpdateProspect(row.dataset.id, { attended_at: new Date().toISOString() });
+  agendaState.focusId = row.dataset.id;
+  renderAgendaFocus();
+  renderAgendaQueue();
+});
+
+// ── Citas ────────────────────────────────────────────────────────────────────
+
+async function agSetApptStatus(id, status) {
+  const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
+  if (error) return alert(`No se pudo actualizar la cita: ${error.message}`);
+  await loadAgenda();
+}
+
+async function onApptClick(ev) {
+  const btn = ev.target.closest('[data-ag-appt]');
+  const item = ev.target.closest('[data-appt]');
+  if (!btn || !item) return;
+  const id = item.dataset.appt;
+  const act = btn.dataset.agAppt;
+  if (act === 'confirm') await agSetApptStatus(id, 'confirmada');
+  else if (act === 'done') await agSetApptStatus(id, 'completada');
+  else if (act === 'cancel') {
+    if (confirm('¿Cancelar esta cita?')) await agSetApptStatus(id, 'cancelada');
+  } else if (act === 'edit') openApptModal({ apptId: id });
+}
+agPendingEl.addEventListener('click', onApptClick);
+agDayEl.addEventListener('click', onApptClick);
+
+const toLocalInput = (d) => {
+  const x = new Date(d);
+  x.setMinutes(x.getMinutes() - x.getTimezoneOffset());
+  return x.toISOString().slice(0, 16);
+};
+
+function openApptModal({ apptId = null, prospectId = null } = {}) {
+  const appt = agendaState.appts.find((a) => a.id === apptId);
+  agendaState.editingApptId = appt?.id ?? null;
+  document.getElementById('ag-appt-title').textContent = appt ? 'Editar cita' : 'Nueva cita';
+  const rows = [...agendaState.rows].sort((a, b) => agDisplayName(a).localeCompare(agDisplayName(b)));
+  const select = document.getElementById('ag-appt-prospect');
+  select.innerHTML = rows.map((r) => `<option value="${r.id}">${escapeHtml(agDisplayName(r))} · ${escapeHtml(r.vendor_name ?? '')}</option>`).join('');
+  select.value = appt?.prospect_id ?? prospectId ?? rows[0]?.id ?? '';
+  select.disabled = Boolean(appt);
+  agApptForm.elements.title.value = appt?.title ?? 'Visita';
+  const base = new Date(agendaState.day);
+  if (sameDay(base, new Date())) base.setTime(Date.now() + 3600000);
+  else base.setHours(10, 0, 0, 0);
+  base.setMinutes(0, 0, 0);
+  agApptForm.elements.when.value = toLocalInput(appt?.scheduled_at ?? base);
+  agApptForm.elements.notes.value = appt?.notes ?? '';
+  agApptStatus.textContent = '';
+  agApptOverlay.hidden = false;
+}
+
+agApptForm.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const fd = new FormData(agApptForm);
+  const when = new Date(fd.get('when'));
+  if (Number.isNaN(when.getTime())) {
+    agApptStatus.textContent = 'Indica la fecha y la hora.';
+    agApptStatus.className = 'settings-status err';
+    return;
+  }
+  const fields = { title: fd.get('title'), scheduled_at: when.toISOString(), notes: fd.get('notes')?.toString().trim() || null };
+  agApptStatus.textContent = 'Guardando…';
+  agApptStatus.className = 'settings-status';
+  const { error } = agendaState.editingApptId
+    ? await supabase.from('appointments').update(fields).eq('id', agendaState.editingApptId)
+    : await supabase.from('appointments').insert({ ...fields, prospect_id: document.getElementById('ag-appt-prospect').value, status: 'confirmada', source: 'manual' });
+  if (error) {
+    agApptStatus.textContent = `Error: ${error.message}`;
+    agApptStatus.className = 'settings-status err';
+    return;
+  }
+  agApptOverlay.hidden = true;
+  agendaState.day = startOfDay(when);
+  await loadAgenda();
+});
+document.getElementById('ag-appt-close').addEventListener('click', () => (agApptOverlay.hidden = true));
+agApptOverlay.addEventListener('click', (ev) => {
+  if (ev.target === agApptOverlay) agApptOverlay.hidden = true;
+});
+document.getElementById('ag-new-btn').addEventListener('click', () => openApptModal());
+
+// ── Navegación por día y calendario ──────────────────────────────────────────
+
+function agShiftDay(delta) {
+  const d = new Date(agendaState.day);
+  d.setDate(d.getDate() + delta);
+  agendaState.day = d;
+  renderAgenda();
+}
+document.getElementById('ag-prev').addEventListener('click', () => agShiftDay(-1));
+document.getElementById('ag-next').addEventListener('click', () => agShiftDay(1));
+document.getElementById('ag-today').addEventListener('click', () => {
+  agendaState.day = startOfDay(new Date());
+  renderAgenda();
+});
+document.getElementById('ag-refresh').addEventListener('click', () => loadAgenda());
+
+function renderAgendaCalendar() {
+  const m = agendaState.calMonth;
+  document.getElementById('ag-cal-title').textContent = capitalize(m.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' }));
+  const first = new Date(m.getFullYear(), m.getMonth(), 1);
+  const offset = (first.getDay() + 6) % 7; // semana desde lunes
+  const days = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+  const cells = ['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d) => `<span class="ag-cal-dow">${d}</span>`);
+  for (let i = 0; i < offset; i++) cells.push('<span></span>');
+  for (let d = 1; d <= days; d++) {
+    const date = new Date(m.getFullYear(), m.getMonth(), d);
+    const n = agendaState.appts.filter((a) => sameDay(a.scheduled_at, date)).length;
+    const cls = ['ag-cal-day', sameDay(date, new Date()) ? 'is-today' : '', sameDay(date, agendaState.day) ? 'is-selected' : ''].join(' ');
+    cells.push(`<button type="button" class="${cls}" data-ag-date="${date.getTime()}">${d}${n ? `<i>${n}</i>` : ''}</button>`);
+  }
+  document.getElementById('ag-cal-grid').innerHTML = cells.join('');
+}
+document.getElementById('ag-calendar-btn').addEventListener('click', () => {
+  agendaState.calMonth = new Date(agendaState.day.getFullYear(), agendaState.day.getMonth(), 1);
+  renderAgendaCalendar();
+  agCalOverlay.hidden = false;
+});
+document.getElementById('ag-cal-prev').addEventListener('click', () => {
+  agendaState.calMonth = new Date(agendaState.calMonth.getFullYear(), agendaState.calMonth.getMonth() - 1, 1);
+  renderAgendaCalendar();
+});
+document.getElementById('ag-cal-next').addEventListener('click', () => {
+  agendaState.calMonth = new Date(agendaState.calMonth.getFullYear(), agendaState.calMonth.getMonth() + 1, 1);
+  renderAgendaCalendar();
+});
+document.getElementById('ag-cal-grid').addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-ag-date]');
+  if (!b) return;
+  agendaState.day = startOfDay(new Date(Number(b.dataset.agDate)));
+  agCalOverlay.hidden = true;
+  renderAgenda();
+});
+document.getElementById('ag-cal-close').addEventListener('click', () => (agCalOverlay.hidden = true));
+agCalOverlay.addEventListener('click', (ev) => {
+  if (ev.target === agCalOverlay) agCalOverlay.hidden = true;
+});
 
 (async function init() {
   fillDialSelects();

@@ -105,6 +105,7 @@ Tablas principales (todas en `public`):
 | `agents` | Vendedor humano: nombre, teléfono, rol, estado en tiempo real, prioridad, vencimiento de acceso |
 | `prospects` | Lead. La IA calcula `score`, `label` (CALIFICADO / TIBIO / FRIO / DESCARTADO) y `conversation_step`. El humano edita etapa, etiquetas, perfil, notas, rúbrica y campos personalizados. Al guardar la rúbrica, el trigger `apply_calificacion_score()` recalcula `score`/`label`/`prioridad` (suma de puntos: ≥70 CALIFICADO, 40-69 TIBIO, <40 FRIO) |
 | `messages` | Historial por prospecto (`user` / `assistant`), con adjuntos opcionales |
+| `appointments` | Citas con prospectos (`por_confirmar` / `confirmada` / `completada` / `cancelada`). La IA del canal propone citas `por_confirmar` (`source = 'ia'`) cuando el prospecto acuerda una visita o llamada (`_shared/appointments.ts`, llamado por `whatsapp-handler` y `meta-webhook`); un humano las confirma desde la pantalla Agenda. Tabla hija de `prospects`: la empresa sale del prospecto. `prospects.snoozed_until` / `attended_at` alimentan "Posponer" y "Atendido" de la cola de prioridad |
 | `roles` | Roles por empresa con array de permisos. "Administrador" es de sistema |
 | `products` | Catálogo de productos |
 | `catalog_files` | Archivos del Catálogo IA asignados a canales |

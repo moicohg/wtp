@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { detectAppointment } from '../_shared/appointments.ts';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -378,6 +379,13 @@ Deno.serve(async (req: Request) => {
 
     // 7. Enviar respuesta al prospecto vía Evolution API
     await sendWhatsApp(instanceId, phone, aiReply.reply);
+
+    // 7b. ¿Quedó una cita? No bloquea la respuesta ya enviada.
+    try {
+      await detectAppointment(supabase, vendor, prospect, history, messageText, aiReply.reply);
+    } catch (e) {
+      console.warn('[agenda] no se pudo detectar cita:', e);
+    }
 
     // 8. Notificar al vendedor si el prospecto queda CALIFICADO
     if (aiReply.label === 'CALIFICADO' && vendor.phone_number) {
