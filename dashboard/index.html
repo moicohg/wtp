@@ -918,6 +918,19 @@
         <h2>Agregar canal</h2>
         <button class="btn-icon" id="vendor-modal-close" type="button" aria-label="Cerrar">✕</button>
       </div>
+      <div id="vf-qr-panel" class="qr-panel" hidden>
+        <p class="qr-title" id="vf-qr-title">Escanea el código con WhatsApp</p>
+        <div class="qr-box"><img id="vf-qr-img" alt="Código QR de WhatsApp" hidden /><span id="vf-qr-loading" class="hint">Generando QR…</span></div>
+        <ol class="hint qr-steps">
+          <li>Abre WhatsApp en el teléfono del canal.</li>
+          <li>Ve a <b>Dispositivos vinculados</b> → <b>Vincular un dispositivo</b>.</li>
+          <li>Apunta la cámara a este código.</li>
+        </ol>
+        <p id="vf-qr-status" class="settings-status"></p>
+        <div class="settings-actions settings-actions-left">
+          <button type="button" class="btn" id="vf-qr-cancel">Cancelar</button>
+        </div>
+      </div>
       <form id="vendor-form" class="settings-form">
         <label>
           Tipo de conexión*
@@ -925,7 +938,7 @@
             <option value="evolution">🔲 Simple (QR)</option>
             <option value="meta">🛡 Profesional (Meta oficial)</option>
           </select>
-          <span class="hint" id="vf-connection-hint">Conecta con tu instancia de Evolution API (requiere Evolution self-hosted).</span>
+          <span class="hint" id="vf-connection-hint">Al crear el canal te mostramos un código QR para vincular tu WhatsApp.</span>
         </label>
 
         <label>
@@ -937,10 +950,6 @@
           <label>
             Teléfono del asesor <span class="hint">(recibe notificación de leads calificados)</span>
             <input name="phone_number" type="text" placeholder="51999999999" />
-          </label>
-          <label>
-            ID de instancia Evolution API
-            <input id="vf-evolution-instance-id" name="evolution_instance_id" type="text" placeholder="mi-instancia-evolution" required />
           </label>
         </div>
 

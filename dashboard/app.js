@@ -598,7 +598,6 @@ const vendorEvolutionFields = document.getElementById('vf-evolution-fields');
 const vendorMetaFields = document.getElementById('vf-meta-fields');
 const vendorConnectionHint = document.getElementById('vf-connection-hint');
 const vendorSubmitBtn = document.getElementById('vendor-submit-btn');
-const vendorEvolutionInstanceInput = document.getElementById('vf-evolution-instance-id');
 const vendorMetaPhoneNumberIdInput = document.getElementById('vf-meta-phone-number-id');
 const vendorMetaWabaIdInput = document.getElementById('vf-meta-waba-id');
 const vendorMetaAccessTokenInput = document.getElementById('vf-meta-access-token');
@@ -608,8 +607,8 @@ const FB_CONNECT_ENABLED = Boolean(META_APP_ID && META_CONFIG_ID);
 
 const VENDOR_CONNECTION_COPY = {
   evolution: {
-    hint: 'Conecta con tu instancia de Evolution API (requiere Evolution self-hosted).',
-    submitLabel: 'Crear canal',
+    hint: 'Al crear el canal te mostramos un código QR para vincular tu WhatsApp.',
+    submitLabel: 'Crear canal y generar QR',
   },
   meta: {
     hint: 'Conexión oficial vía WhatsApp Business Cloud API. Pega el token permanente que generaste desde tu Meta Business dashboard.',
@@ -627,7 +626,6 @@ function updateVendorFormConnectionType() {
   // El SDK se precarga para que FB.login corra dentro del clic (si no, el navegador bloquea el popup).
   if (isMeta && FB_CONNECT_ENABLED) loadFacebookSdk().catch(() => {});
 
-  vendorEvolutionInstanceInput.required = !isMeta;
   vendorMetaPhoneNumberIdInput.required = isMeta;
   vendorMetaWabaIdInput.required = isMeta;
   vendorMetaAccessTokenInput.required = isMeta;
@@ -842,7 +840,7 @@ sidenavEl.addEventListener('click', (ev) => {
 // Sin ai_api_key ni meta_access_token: el cliente no necesita los secretos
 // (y el lockdown revoca su lectura). ai_key_set dice si hay clave.
 const VENDOR_COLUMNS =
-  'id, name, phone_number, channel_type, evolution_instance_id, meta_phone_number_id, meta_waba_id, meta_verified, ' +
+  'id, name, phone_number, channel_type, evolution_instance_id, meta_phone_number_id, meta_waba_id, meta_verified, evolution_connected, ' +
   'ai_provider, ai_model, ai_key_set, system_prompt, assigned_agent_id, keywords, organization_id, created_at, updated_at';
 
 async function loadVendors() {
@@ -2945,7 +2943,7 @@ function renderVendorCards() {
 
   vendorCardsEl.innerHTML = state.vendors
     .map((v) => {
-      const connected = v.channel_type === 'meta' ? v.meta_verified : Boolean(v.evolution_instance_id);
+      const connected = v.channel_type === 'meta' ? v.meta_verified : Boolean(v.evolution_connected);
       const iaActiva = Boolean(v.ai_key_set);
       const agent = state.agents.find((a) => a.id === v.assigned_agent_id);
       const keywords = v.keywords ?? [];
@@ -3020,9 +3018,16 @@ async function deleteVendor(vendorId) {
   if (!v) return;
   if (!confirm(`¿Eliminar el canal “${v.name}”? Se borrarán también sus prospectos y conversaciones.`)) return;
 
-  const { error } = await supabase.from('vendors').delete().eq('id', vendorId);
-  if (error) {
-    alert(`No se pudo eliminar: ${error.message}`);
+  // Canal QR: también hay que borrar la instancia en Evolution (la función borra ambos).
+  try {
+    if (v.channel_type === 'evolution') {
+      await callEvolutionConnect({ action: 'delete', vendor_id: vendorId });
+    } else {
+      const { error } = await supabase.from('vendors').delete().eq('id', vendorId);
+      if (error) throw new Error(error.message);
+    }
+  } catch (err) {
+    alert(`No se pudo eliminar: ${err.message}`);
     return;
   }
   if (state.vendorId === vendorId) state.vendorId = null;
@@ -4255,24 +4260,103 @@ function readAiConfig(fd) {
   return { ai_provider, ai_api_key, ai_model: DEFAULT_AI_MODEL[ai_provider] };
 }
 
+// ── Conexión por QR (Evolution API) ──────────────────────────────────────────
+// Toda la comunicación con Evolution pasa por la Edge Function evolution-connect:
+// crea el canal + la instancia, devuelve el QR y dice cuándo se escaneó.
+
+const vendorQrPanel = document.getElementById('vf-qr-panel');
+const vendorQrImg = document.getElementById('vf-qr-img');
+const vendorQrLoading = document.getElementById('vf-qr-loading');
+const vendorQrStatus = document.getElementById('vf-qr-status');
+const QR_POLL_MS = 3000;
+const QR_TIMEOUT_MS = 5 * 60 * 1000;
+
+let qrSession = null; // { vendorId, timer, startedAt }
+
+async function callEvolutionConnect(payload) {
+  const resp = await fetch(`${FUNCTIONS_URL}/evolution-connect`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
+  return json;
+}
+
+function showQr(qr) {
+  vendorQrLoading.hidden = Boolean(qr);
+  vendorQrImg.hidden = !qr;
+  if (qr) vendorQrImg.src = qr;
+}
+
+function setQrStatus(text, cls = '') {
+  vendorQrStatus.textContent = text;
+  vendorQrStatus.className = `settings-status ${cls}`.trim();
+}
+
+function stopQrSession() {
+  if (qrSession) clearTimeout(qrSession.timer);
+  qrSession = null;
+  vendorQrPanel.hidden = true;
+  vendorForm.hidden = false;
+}
+
+function scheduleQrPoll(session) {
+  session.timer = setTimeout(async () => {
+    if (qrSession !== session) return;
+    if (Date.now() - session.startedAt > QR_TIMEOUT_MS) {
+      setQrStatus('El código venció. Cancela y vuelve a crear el canal.', 'err');
+      return;
+    }
+    try {
+      const st = await callEvolutionConnect({ action: 'status', vendor_id: session.vendorId });
+      if (qrSession !== session) return;
+      if (st.connected) {
+        stopQrSession();
+        await onVendorCreated();
+        return;
+      }
+      showQr(st.qr);
+    } catch (err) {
+      if (qrSession !== session) return;
+      setQrStatus(`Reintentando… (${err.message})`, 'err');
+    }
+    if (qrSession === session) scheduleQrPoll(session);
+  }, QR_POLL_MS);
+}
+
 async function createVendorEvolution(fd, name) {
   const phone_number = fd.get('phone_number')?.toString().trim() || null;
-  const evolution_instance_id = fd.get('evolution_instance_id')?.toString().trim();
 
-  if (!evolution_instance_id) {
-    throw new Error('El ID de instancia de Evolution API es obligatorio.');
-  }
-
-  const { error } = await supabase.from('vendors').insert({
+  const created = await callEvolutionConnect({
+    action: 'create',
     name,
     phone_number,
-    channel_type: 'evolution',
-    evolution_instance_id,
-    ai_api_key: '',
     ...readAiConfig(fd),
   });
 
-  if (error) throw new Error(friendlyDbError(error.message));
+  vendorForm.hidden = true;
+  vendorQrPanel.hidden = false;
+  showQr(created.qr);
+  setQrStatus('Esperando que escanees el código…');
+  qrSession = { vendorId: created.vendor_id, timer: null, startedAt: Date.now() };
+  scheduleQrPoll(qrSession);
+  await loadVendors();
+}
+
+// Cerrar el modal con un QR pendiente cancela el canal (si no, quedaría "Sin conectar").
+async function closeVendorModal() {
+  const session = qrSession;
+  stopQrSession();
+  vendorOverlay.hidden = true;
+  if (!session) return;
+  try {
+    await callEvolutionConnect({ action: 'delete', vendor_id: session.vendorId });
+  } catch (err) {
+    console.warn('No se pudo cancelar el canal pendiente:', err.message);
+  }
+  await loadVendors();
 }
 
 // Crea/actualiza el canal Meta en meta-exchange (con `access_token` manual o con
@@ -4452,7 +4536,7 @@ async function createVendor(ev) {
     return;
   }
 
-  vendorStatus.textContent = isMeta ? 'Conectando con Meta…' : 'Creando…';
+  vendorStatus.textContent = isMeta ? 'Conectando con Meta…' : 'Creando canal y generando QR…';
   vendorStatus.className = 'settings-status';
 
   try {
@@ -4460,6 +4544,7 @@ async function createVendor(ev) {
       await createVendorMeta(fd, name);
     } else {
       await createVendorEvolution(fd, name);
+      return; // onVendorCreated corre cuando se escanea el QR
     }
   } catch (err) {
     vendorStatus.textContent = `Error: ${err.message}`;
@@ -5231,9 +5316,10 @@ document.getElementById('create-vendor-btn').addEventListener('click', () => {
   updateVendorFormConnectionType();
   vendorOverlay.hidden = false;
 });
-document.getElementById('vendor-modal-close').addEventListener('click', () => (vendorOverlay.hidden = true));
+document.getElementById('vendor-modal-close').addEventListener('click', closeVendorModal);
+document.getElementById('vf-qr-cancel').addEventListener('click', closeVendorModal);
 vendorOverlay.addEventListener('click', (ev) => {
-  if (ev.target === vendorOverlay) vendorOverlay.hidden = true;
+  if (ev.target === vendorOverlay) closeVendorModal();
 });
 vendorForm.addEventListener('submit', createVendor);
 vendorConnectionType.addEventListener('change', updateVendorFormConnectionType);
@@ -5548,7 +5634,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'Escape') return;
   if (!drawerOverlay.hidden) closeDrawer();
   if (!settingsOverlay.hidden) settingsOverlay.hidden = true;
-  if (!vendorOverlay.hidden) vendorOverlay.hidden = true;
+  if (!vendorOverlay.hidden) closeVendorModal();
   if (!agentOverlay.hidden) agentOverlay.hidden = true;
   if (!assignOverlay.hidden) assignOverlay.hidden = true;
   if (!roleOverlay.hidden) roleOverlay.hidden = true;

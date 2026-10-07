@@ -159,6 +159,7 @@ Al crear una empresa, un trigger siembra los roles "Administrador" (sistema) y "
 |---|---|---|---|
 | `whatsapp-handler` | Evolution API (webhook, `verify_jwt=true`) | JWT en el gateway; escribe con service_role | Recibe el mensaje, crea/actualiza el prospecto, llama a la IA del canal y responde. Ignora mensajes propios, grupos y mensajes sin texto |
 | `meta-webhook` | Meta Cloud API (webhook, `verify_jwt=false`) | verificación `hub.verify_token` | Igual que la anterior para canales Meta. GET responde el challenge de verificación |
+| `evolution-connect` | Panel (crear canal QR) | sesión + `config.manage_channels` | Crea la instancia en Evolution API con el webhook hacia `whatsapp-handler`, devuelve el QR y consulta si ya se escaneó (`create` / `status` / `delete`) |
 | `send-message` | Panel (chat) | sesión + acceso al chat | Envía texto o adjunto por Evolution o Meta y guarda el mensaje como `assistant` |
 | `admin-users` | Panel (Configuración y Empresas) | sesión + `users.manage_users` o super-admin | Acciones: `create_organization`, `list_organizations`, `set_organization_active`, `set_organization_limits`, `create_user`, `update_user`, `reset_password`, `set_active`, `delete_user` |
 | `update-vendor-ai` | Panel (config del bot) | sesión + `config.ai_settings` | Cambia proveedor, clave, modelo y prompt de un canal de la empresa |

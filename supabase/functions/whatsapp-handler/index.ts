@@ -268,6 +268,15 @@ Deno.serve(async (req: Request) => {
   const instanceId = body.instance as string;
   const data = body.data as Record<string, unknown> | undefined;
 
+  // Estado de la sesión de WhatsApp: mantiene al día si el QR sigue vinculado.
+  if (body.event === 'connection.update' && instanceId && data?.state) {
+    await supabase
+      .from('vendors')
+      .update({ evolution_connected: data.state === 'open' })
+      .eq('evolution_instance_id', instanceId);
+    return new Response('ok');
+  }
+
   if (!instanceId || !data) {
     return new Response('ok'); // evento no relevante
   }
