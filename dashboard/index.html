@@ -487,7 +487,7 @@
               <tr>
                 <th>Empresa</th>
                 <th>Canales</th>
-                <th>Usuarios</th>
+                <th>Vendedores</th>
                 <th>Administradores</th>
                 <th>Estado</th>
                 <th>Acciones</th>
@@ -1142,7 +1142,11 @@
         </label>
         <label>
           Canales de WhatsApp permitidos
-          <input name="max_channels" type="number" min="0" step="1" value="1" required />
+          <input name="max_channels" type="number" min="0" step="1" value="5" required />
+        </label>
+        <label>
+          Vendedores permitidos <span class="hint">(el administrador no cuenta)</span>
+          <input name="max_agents" type="number" min="0" step="1" value="5" required />
         </label>
         <p class="hint">Primer administrador de la empresa: entra con correo y contraseña y administra a sus vendedores.</p>
         <label>

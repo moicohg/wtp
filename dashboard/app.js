@@ -895,6 +895,8 @@ function renderChannelLimit() {
 function friendlyDbError(message) {
   const limit = String(message ?? '').match(/LIMITE_CANALES:(\d+)/);
   if (limit) return `Tu empresa alcanzó el límite de ${limit[1]} canales de WhatsApp. Pide al administrador de la plataforma ampliarlo.`;
+  const agentLimit = String(message ?? '').match(/LIMITE_VENDEDORES:(\d+)/);
+  if (agentLimit) return `Tu empresa alcanzó el límite de ${agentLimit[1]} vendedores. Pide al administrador de la plataforma ampliarlo.`;
   return message;
 }
 
@@ -4779,7 +4781,9 @@ function openAgentModal(orgId = null) {
   // Siempre se muestra a qué empresa pertenecerá el usuario (la propia o, si eres super-admin, la elegida).
   const org = foreignOrg ? state.organizations.find((o) => o.id === orgId) : state.me.organization;
   agentModalOrg.hidden = !org;
-  agentModalOrg.textContent = org ? `Empresa: ${org.name}` : '';
+  const used = foreignOrg ? org?.agents_count : state.agents.length;
+  const quota = org?.max_agents !== undefined && used !== undefined ? ` · Vendedores: ${used} de ${org.max_agents}` : '';
+  agentModalOrg.textContent = org ? `Empresa: ${org.name}${quota}` : '';
 
   agentStatus.textContent = '';
   agentStatus.className = 'settings-status';
@@ -5036,11 +5040,11 @@ function renderOrgsTable() {
         <tr data-id="${o.id}">
           <td><strong>${escapeHtml(o.name)}</strong>${isMine ? ' <span class="role-badge role-badge-info">Tu empresa</span>' : ''}</td>
           <td>${o.channels_count} / ${o.max_channels}</td>
-          <td>${o.users_count}</td>
+          <td>${o.agents_count ?? 0} / ${o.max_agents}</td>
           <td>${(o.admins ?? []).map((a) => escapeHtml(a.email)).join('<br>') || '—'}</td>
           <td>${o.is_active ? '<span class="role-badge role-badge-ok">Activa</span>' : '<span class="role-badge role-badge-off">Desactivada</span>'}</td>
           <td>
-            <button type="button" class="btn-icon js-org-limit" data-id="${o.id}" title="Cambiar límite de canales" aria-label="Cambiar límite de canales">🔢</button>
+            <button type="button" class="btn-icon js-org-limit" data-id="${o.id}" title="Cambiar límites de canales y vendedores" aria-label="Cambiar límites de canales y vendedores">🔢</button>
             <button type="button" class="btn-icon js-org-add-user" data-id="${o.id}" title="Nuevo usuario" aria-label="Nuevo usuario">👤➕</button>
             ${isMine ? '' : `<button type="button" class="btn-icon js-org-toggle" data-id="${o.id}" title="${o.is_active ? 'Desactivar' : 'Activar'}" aria-label="${o.is_active ? 'Desactivar' : 'Activar'}">${o.is_active ? '⏸' : '▶️'}</button>`}
             <button type="button" class="btn-icon js-org-expand" data-id="${o.id}" aria-label="Ver usuarios">${expanded ? '▾' : '▸'}</button>
@@ -5070,15 +5074,22 @@ orgsTbody.addEventListener('click', async (ev) => {
     return;
   }
   if (btn.classList.contains('js-org-limit')) {
-    const raw = prompt(`Canales de WhatsApp permitidos para ${org.name}:`, String(org.max_channels));
-    if (raw === null) return;
-    const max = Number.parseInt(raw, 10);
-    if (!Number.isInteger(max) || max < 0) {
-      alert('Escribe un número entero mayor o igual a 0.');
-      return;
-    }
+    const askLimit = (label, current) => {
+      const raw = prompt(`${label} permitidos para ${org.name}:`, String(current));
+      if (raw === null) return null;
+      const n = Number.parseInt(raw, 10);
+      if (!Number.isInteger(n) || n < 0) {
+        alert('Escribe un número entero mayor o igual a 0.');
+        return null;
+      }
+      return n;
+    };
+    const max = askLimit('Canales de WhatsApp', org.max_channels);
+    if (max === null) return;
+    const maxAgents = askLimit('Vendedores (sin contar al administrador)', org.max_agents);
+    if (maxAgents === null) return;
     try {
-      await callAdminUsers('set_organization_limits', { organization_id: org.id, max_channels: max });
+      await callAdminUsers('set_organization_limits', { organization_id: org.id, max_channels: max, max_agents: maxAgents });
     } catch (err) {
       alert(`No se pudo cambiar el límite: ${err.message}`);
       return;
@@ -5086,6 +5097,7 @@ orgsTbody.addEventListener('click', async (ev) => {
     await loadOrganizations();
     if (org.id === state.me.organization.id) {
       state.me.organization.max_channels = max;
+      state.me.organization.max_agents = maxAgents;
       renderChannelLimit();
     }
     return;
@@ -5120,6 +5132,7 @@ orgForm.addEventListener('submit', async (ev) => {
   const payload = {
     name: String(fd.get('name') ?? '').trim(),
     max_channels: Number.parseInt(String(fd.get('max_channels') ?? '1'), 10),
+    max_agents: Number.parseInt(String(fd.get('max_agents') ?? '5'), 10),
     admin: {
       email: String(fd.get('admin_email') ?? '').trim().toLowerCase(),
       password: String(fd.get('admin_password') ?? ''),
@@ -5729,7 +5742,7 @@ loginForm.addEventListener('submit', async (ev) => {
 async function bootstrapSession(session) {
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('*, organization:organizations(id, name, is_active, max_channels), agent:agents(*, role:roles(id, name, permissions))')
+    .select('*, organization:organizations(id, name, is_active, max_channels, max_agents), agent:agents(*, role:roles(id, name, permissions))')
     .eq('id', session.user.id)
     .maybeSingle();
 

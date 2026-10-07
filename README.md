@@ -85,7 +85,7 @@ wtp/
 | Automatización | Cadencias multi-día (plantilla, pasos, audiencia). Solo definición, sin motor | `messaging.manage_automations` |
 | Disponibilidad | Estado en tiempo real de cada vendedor, historial y config de asignación/alertas | todos |
 | Configuración | Usuarios de la empresa y Roles con permisos | `users.manage_users` / `users.manage_roles` |
-| Empresas | Crear empresas, activarlas y fijar `max_channels` | solo super-admin |
+| Empresas | Crear empresas, activarlas y fijar `max_channels` y `max_agents` | solo super-admin |
 
 En el chat, el panel "Info del cliente" permite editar etapa, perfil, etiquetas, estado de conversación, calificación por rúbrica (Necesidad / Inversión / Urgencia / Autoridad), campos personalizados y apagar la IA solo para ese chat.
 
@@ -99,7 +99,7 @@ Tablas principales (todas en `public`):
 
 | Tabla | Descripción |
 |---|---|
-| `organizations` | Empresa cliente del SaaS. `max_channels` limita cuántos canales puede crear |
+| `organizations` | Empresa cliente del SaaS. `max_channels` limita cuántos canales puede crear y `max_agents` cuántos vendedores (el administrador no cuenta) |
 | `profiles` | Una fila por usuario de Auth: empresa, tipo (`admin` / `vendedor`), super-admin, vínculo a `agents` |
 | `vendors` | Canal de WhatsApp con su bot: tipo (`evolution` / `meta`), credenciales, proveedor de IA, prompt, vendedor asignado, keywords |
 | `agents` | Vendedor humano: nombre, teléfono, rol, estado en tiempo real, prioridad, vencimiento de acceso |
@@ -134,6 +134,7 @@ Desde el 2026-09-13 el CRM es multi-empresa con login real. Reglas:
 - **Secretos no legibles por el cliente**: `vendors.ai_api_key` y `meta_access_token` no se pueden leer desde el panel. El panel usa la columna generada `ai_key_set`.
 - **Escrituras solo por Edge Functions**: `organizations`, `profiles` y `messages` se escriben únicamente con `service_role`. En `prospects` el panel solo puede actualizar columnas "humanas"; score, label y paso son de la IA.
 - **Límite de canales**: trigger `enforce_channel_limit` lanza `LIMITE_CANALES:<n>` al superar `max_channels`.
+- **Límite de vendedores**: trigger `enforce_agent_limit` lanza `LIMITE_VENDEDORES:<n>` al superar `max_agents`. Solo cuentan filas de `agents`.
 - **Un vendedor solo cambia su propio estado**: trigger `agents_guard_self_update` evita que se autoasigne un rol o cambie su vencimiento.
 
 ### Permisos

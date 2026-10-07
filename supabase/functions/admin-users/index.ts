@@ -95,6 +95,8 @@ async function createOrganization(caller: Caller, body: Body) {
   const name = requireStr(body, 'name', 'el nombre de la empresa');
   const maxChannels = Number.isInteger(body.max_channels) ? (body.max_channels as number) : 1;
   if (maxChannels < 0) throw new HttpError(400, 'max_channels no puede ser negativo');
+  const maxAgents = Number.isInteger(body.max_agents) ? (body.max_agents as number) : 5;
+  if (maxAgents < 0) throw new HttpError(400, 'max_agents no puede ser negativo');
   const adminBody = (body.admin ?? {}) as Body;
   const email = requireStr(adminBody, 'email', 'el correo del administrador').toLowerCase();
   const password = requirePassword(adminBody);
@@ -102,7 +104,7 @@ async function createOrganization(caller: Caller, body: Body) {
 
   const { data: org, error: orgError } = await admin
     .from('organizations')
-    .insert({ name, max_channels: maxChannels })
+    .insert({ name, max_channels: maxChannels, max_agents: maxAgents })
     .select('*')
     .single();
   if (orgError || !org) throw new HttpError(500, orgError?.message ?? 'No se pudo crear la empresa');
@@ -133,14 +135,16 @@ async function createOrganization(caller: Caller, body: Body) {
 
 async function listOrganizations(caller: Caller) {
   requireSuperAdmin(caller);
-  const [orgs, profiles, vendors] = await Promise.all([
+  const [orgs, profiles, vendors, agents] = await Promise.all([
     admin.from('organizations').select('*').order('created_at', { ascending: true }),
     admin.from('profiles').select('id, organization_id, email, user_type, is_active, is_super_admin, full_name'),
     admin.from('vendors').select('id, organization_id'),
+    admin.from('agents').select('id, organization_id'),
   ]);
   if (orgs.error) throw new HttpError(500, orgs.error.message);
   if (profiles.error) throw new HttpError(500, profiles.error.message);
   if (vendors.error) throw new HttpError(500, vendors.error.message);
+  if (agents.error) throw new HttpError(500, agents.error.message);
 
   const rows = (orgs.data ?? []).map((o) => {
     const users = (profiles.data ?? []).filter((p) => p.organization_id === o.id);
@@ -148,6 +152,7 @@ async function listOrganizations(caller: Caller) {
       ...o,
       users_count: users.length,
       channels_count: (vendors.data ?? []).filter((v) => v.organization_id === o.id).length,
+      agents_count: (agents.data ?? []).filter((a) => a.organization_id === o.id).length,
       admins: users.filter((p) => p.user_type === 'admin').map((p) => ({ id: p.id, email: p.email, full_name: p.full_name, is_active: p.is_active })),
     };
   });
@@ -167,9 +172,16 @@ async function setOrganizationActive(caller: Caller, body: Body) {
 async function setOrganizationLimits(caller: Caller, body: Body) {
   requireSuperAdmin(caller);
   const id = requireStr(body, 'organization_id', 'organization_id');
-  const maxChannels = body.max_channels;
-  if (!Number.isInteger(maxChannels) || (maxChannels as number) < 0) throw new HttpError(400, 'max_channels inválido');
-  const { error } = await admin.from('organizations').update({ max_channels: maxChannels }).eq('id', id);
+  // Se puede cambiar uno o los dos topes; el que no venga queda como está.
+  const patch: Record<string, number> = {};
+  for (const key of ['max_channels', 'max_agents'] as const) {
+    if (body[key] === undefined) continue;
+    const value = body[key];
+    if (!Number.isInteger(value) || (value as number) < 0) throw new HttpError(400, `${key} inválido`);
+    patch[key] = value as number;
+  }
+  if (!Object.keys(patch).length) throw new HttpError(400, 'Nada que actualizar');
+  const { error } = await admin.from('organizations').update(patch).eq('id', id);
   if (error) throw new HttpError(500, error.message);
   return json({ success: true });
 }
@@ -239,6 +251,8 @@ async function createUser(caller: Caller, body: Body) {
       .insert({ name: fullName, email: infoEmail, phone, role_id: roleId, access_expires_at: accessExpiresAt, organization_id: orgId })
       .select('id')
       .single();
+    const limit = error?.message.match(/LIMITE_VENDEDORES:(\d+)/);
+    if (limit) throw new HttpError(409, `Esta empresa alcanzó el límite de ${limit[1]} vendedores de su plan`);
     if (error || !agent) throw new HttpError(500, error?.message ?? 'No se pudo crear el vendedor');
     agentId = agent.id;
     createdAgent = true;
