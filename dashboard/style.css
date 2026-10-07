@@ -2269,3 +2269,4 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 .qr-box { width: 264px; height: 264px; display: flex; align-items: center; justify-content: center; background: #fff; border-radius: 12px; border: 1px solid var(--border, #e5e7eb); }
 .qr-box img { width: 248px; height: 248px; }
 .qr-steps { margin: 0; padding-left: 18px; text-align: left; }
+.settings-form[hidden], .qr-panel[hidden] { display: none; }

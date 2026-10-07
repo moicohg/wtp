@@ -4284,10 +4284,12 @@ async function callEvolutionConnect(payload) {
   return json;
 }
 
+// Evolution responde un instante sin imagen mientras regenera el QR: se conserva el último bueno.
 function showQr(qr) {
-  vendorQrLoading.hidden = Boolean(qr);
-  vendorQrImg.hidden = !qr;
   if (qr) vendorQrImg.src = qr;
+  const hasQr = Boolean(vendorQrImg.getAttribute('src'));
+  vendorQrLoading.style.display = hasQr ? 'none' : '';
+  vendorQrImg.hidden = !hasQr;
 }
 
 function setQrStatus(text, cls = '') {
@@ -4302,7 +4304,7 @@ function stopQrSession() {
   vendorForm.hidden = false;
 }
 
-function scheduleQrPoll(session) {
+function scheduleQrPoll(session, delay = QR_POLL_MS) {
   session.timer = setTimeout(async () => {
     if (qrSession !== session) return;
     if (Date.now() - session.startedAt > QR_TIMEOUT_MS) {
@@ -4323,7 +4325,7 @@ function scheduleQrPoll(session) {
       setQrStatus(`Reintentando… (${err.message})`, 'err');
     }
     if (qrSession === session) scheduleQrPoll(session);
-  }, QR_POLL_MS);
+  }, delay);
 }
 
 async function createVendorEvolution(fd, name) {
@@ -4338,10 +4340,11 @@ async function createVendorEvolution(fd, name) {
 
   vendorForm.hidden = true;
   vendorQrPanel.hidden = false;
+  vendorQrImg.removeAttribute('src');
   showQr(created.qr);
   setQrStatus('Esperando que escanees el código…');
   qrSession = { vendorId: created.vendor_id, timer: null, startedAt: Date.now() };
-  scheduleQrPoll(qrSession);
+  scheduleQrPoll(qrSession, created.qr ? QR_POLL_MS : 1000);
   await loadVendors();
 }
 
