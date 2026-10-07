@@ -63,6 +63,7 @@ wtp/
 │   │   │   ├── phone.ts         Login por teléfono (espejo de app.js)
 │   │   │   ├── limits.ts        Consumo del plan (org_usage) y reglas aiAllowed / storageAllowed
 │   │   │   ├── appointments.ts  Detección de citas con la IA del canal
+│   │   │   ├── sections.ts      Secciones opcionales que se pueden habilitar por empresa (espejo de app.js)
 │   │   │   └── media-ai.ts      Transcribir notas de voz y describir imágenes
 │   │   ├── whatsapp-handler/    Webhook Evolution API → IA (texto, adjuntos, estado de la sesión)
 │   │   ├── meta-webhook/        Webhook Meta Cloud API → IA
@@ -74,7 +75,7 @@ wtp/
 │   │   ├── purge-media/         Borrado diario de adjuntos viejos (lo llama pg_cron)
 │   │   ├── product-autocomplete/    Generar catálogo de productos con IA
 │   │   └── catalog-analyze-prompt/  Detectar productos en el system prompt
-│   └── migrations/             Esquema completo (27 archivos), en orden cronológico
+│   └── migrations/             Esquema completo (28 archivos), en orden cronológico
 ├── .claude/skills/             deploy · qa · esquema (ver más abajo)
 ├── .env.example                Secrets de las Edge Functions
 └── vercel.json                 outputDirectory = dashboard
@@ -164,12 +165,14 @@ El dueño de la plataforma fija el plan de cada empresa en **Empresas** (botón 
 | Vendedores (el administrador no cuenta) | `max_agents` | 5 | El trigger `enforce_agent_limit` lanza `LIMITE_VENDEDORES:<n>` |
 | Respuestas de IA por mes (calendario, hora de Lima) | `max_ai_messages` | 1000 | El bot guarda el mensaje y **no responde**; el equipo sigue a mano |
 | Almacenamiento de archivos (MB en `chat-media`) | `max_storage_mb` | 500 | La política de subida lo rechaza; el handler no guarda adjuntos entrantes (queda la nota "Adjunto no guardado") |
+| Secciones del CRM | `enabled_sections` (lista de módulos; null = todos) | todas | El panel oculta las secciones no contratadas y las funciones que las respaldan responden 403 (ver abajo) |
 | Vencimiento del plan | `plan_expires_at` (último día de acceso, null = sin vencimiento) | sin vencimiento | Ver abajo |
 
 La empresa dueña de la plataforma ("007") tiene topes altísimos y el super-admin queda exento del vencimiento.
 
 - **Vencimiento**: `current_profile()` (el filtro que usan todas las políticas RLS) deja sin acceso a la empresa cuando `plan_expires_at` es anterior a hoy (hora de Lima). `getCaller` (Edge Functions) y el panel (pantalla "Plan vencido") aplican la misma regla, y el bot se detiene (`org_usage.plan_active`). El administrador ve un aviso cuando faltan 7 días o menos. Renovar es mover la fecha.
-- **Consumo**: `org_usage(p_org)` (solo `service_role`) devuelve respuestas de IA del mes, bytes de almacenamiento, topes y `plan_active`. Las respuestas del bot se marcan con `messages.by_ai` para poder contarlas (las del equipo también son `role = 'assistant'`).
+- **Secciones por empresa**: al crear o editar una empresa (Empresas) se marcan los módulos opcionales que puede usar: Dashboard, Agenda, Bandeja global, Leads, Productos, Catálogo IA, Automatización y Disponibilidad. Canales y Configuración siempre están. Con una sección apagada: el panel la oculta del menú y no deja abrirla; `product-autocomplete` y `catalog-analyze-prompt` responden 403 (`requireSection`); y sin Agenda no se detectan citas (ahorra llamadas a la IA). Es una restricción comercial, no de seguridad: el aislamiento de datos sigue siendo RLS. Las claves viven en `PLAN_SECTIONS` (`app.js`), `_shared/sections.ts` y el check de la migración: mantenerlas iguales.
+- **Consumo**: `org_usage(p_org)` (solo `service_role`) devuelve respuestas de IA del mes, bytes de almacenamiento, topes, `plan_active` y `agenda_enabled`. Las respuestas del bot se marcan con `messages.by_ai` para poder contarlas (las del equipo también son `role = 'assistant'`).
 - **Adjuntos viejos**: cada día `purge-media` borra los archivos de más de 90 días; el mensaje se conserva con `media_url` en null y el chat muestra "Adjunto eliminado por antigüedad".
 - **Dónde se ve**: columnas "Vendedores", "Vence" y "Uso del mes" en Empresas, y la tarjeta "Uso del plan" en Canales (acción `get_usage`).
 
@@ -354,6 +357,7 @@ supabase db push
 | `limits.ts` | `whatsapp-handler`, `meta-webhook` |
 | `appointments.ts` | `whatsapp-handler`, `meta-webhook` |
 | `media-ai.ts` | `whatsapp-handler` |
+| `sections.ts` | `admin-users` |
 
 ```bash
 supabase functions deploy whatsapp-handler
