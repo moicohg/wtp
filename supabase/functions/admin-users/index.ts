@@ -97,6 +97,10 @@ async function createOrganization(caller: Caller, body: Body) {
   if (maxChannels < 0) throw new HttpError(400, 'max_channels no puede ser negativo');
   const maxAgents = Number.isInteger(body.max_agents) ? (body.max_agents as number) : 5;
   if (maxAgents < 0) throw new HttpError(400, 'max_agents no puede ser negativo');
+  const maxAiMessages = Number.isInteger(body.max_ai_messages) ? (body.max_ai_messages as number) : 1000;
+  if (maxAiMessages < 0) throw new HttpError(400, 'max_ai_messages no puede ser negativo');
+  const maxStorageMb = Number.isInteger(body.max_storage_mb) ? (body.max_storage_mb as number) : 500;
+  if (maxStorageMb < 0) throw new HttpError(400, 'max_storage_mb no puede ser negativo');
   const adminBody = (body.admin ?? {}) as Body;
   const email = requireStr(adminBody, 'email', 'el correo del administrador').toLowerCase();
   const password = requirePassword(adminBody);
@@ -104,7 +108,7 @@ async function createOrganization(caller: Caller, body: Body) {
 
   const { data: org, error: orgError } = await admin
     .from('organizations')
-    .insert({ name, max_channels: maxChannels, max_agents: maxAgents })
+    .insert({ name, max_channels: maxChannels, max_agents: maxAgents, max_ai_messages: maxAiMessages, max_storage_mb: maxStorageMb })
     .select('*')
     .single();
   if (orgError || !org) throw new HttpError(500, orgError?.message ?? 'No se pudo crear la empresa');
@@ -146,17 +150,38 @@ async function listOrganizations(caller: Caller) {
   if (vendors.error) throw new HttpError(500, vendors.error.message);
   if (agents.error) throw new HttpError(500, agents.error.message);
 
-  const rows = (orgs.data ?? []).map((o) => {
+  const usages = await Promise.all((orgs.data ?? []).map((o) => admin.rpc('org_usage', { p_org: o.id })));
+
+  const rows = (orgs.data ?? []).map((o, i) => {
     const users = (profiles.data ?? []).filter((p) => p.organization_id === o.id);
     return {
       ...o,
       users_count: users.length,
       channels_count: (vendors.data ?? []).filter((v) => v.organization_id === o.id).length,
       agents_count: (agents.data ?? []).filter((a) => a.organization_id === o.id).length,
+      usage: usages[i].data ?? null,
       admins: users.filter((p) => p.user_type === 'admin').map((p) => ({ id: p.id, email: p.email, full_name: p.full_name, is_active: p.is_active })),
     };
   });
   return json({ organizations: rows });
+}
+
+// Consumo y topes de la empresa de quien llama (lo ve el administrador en Canales).
+async function getUsage(caller: Caller) {
+  if (!caller.isAdmin) throw new HttpError(403, 'Solo el administrador de la empresa puede ver el consumo del plan');
+  const orgId = caller.organizationId;
+  const [org, channels, agents, usage] = await Promise.all([
+    admin.from('organizations').select('max_channels, max_agents').eq('id', orgId).single(),
+    admin.from('vendors').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
+    admin.from('agents').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
+    admin.rpc('org_usage', { p_org: orgId }),
+  ]);
+  if (org.error) throw new HttpError(500, org.error.message);
+  return json({
+    channels: { used: channels.count ?? 0, max: org.data.max_channels },
+    agents: { used: agents.count ?? 0, max: org.data.max_agents },
+    ...(usage.data ?? {}),
+  });
 }
 
 async function setOrganizationActive(caller: Caller, body: Body) {
@@ -174,7 +199,7 @@ async function setOrganizationLimits(caller: Caller, body: Body) {
   const id = requireStr(body, 'organization_id', 'organization_id');
   // Se puede cambiar uno o los dos topes; el que no venga queda como está.
   const patch: Record<string, number> = {};
-  for (const key of ['max_channels', 'max_agents'] as const) {
+  for (const key of ['max_channels', 'max_agents', 'max_ai_messages', 'max_storage_mb'] as const) {
     if (body[key] === undefined) continue;
     const value = body[key];
     if (!Number.isInteger(value) || (value as number) < 0) throw new HttpError(400, `${key} inválido`);
@@ -365,6 +390,7 @@ Deno.serve(async (req: Request) => {
     switch (str(body, 'action')) {
       case 'create_organization':     return await createOrganization(caller, body);
       case 'list_organizations':      return await listOrganizations(caller);
+      case 'get_usage':               return await getUsage(caller);
       case 'set_organization_active': return await setOrganizationActive(caller, body);
       case 'set_organization_limits': return await setOrganizationLimits(caller, body);
       case 'create_user':             return await createUser(caller, body);

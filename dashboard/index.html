@@ -154,6 +154,7 @@
           <div class="cn-main">
             <div class="ag-card" id="cn-table"></div>
             <div class="ag-card" id="cn-load"></div>
+            <div class="ag-card" id="cn-usage" hidden></div>
           </div>
           <aside class="ag-card cn-detail" id="cn-detail"></aside>
         </div>
@@ -488,13 +489,14 @@
                 <th>Empresa</th>
                 <th>Canales</th>
                 <th>Vendedores</th>
+                <th>Uso del mes</th>
                 <th>Administradores</th>
                 <th>Estado</th>
                 <th>Acciones</th>
               </tr>
             </thead>
             <tbody id="orgs-tbody">
-              <tr class="empty-row"><td colspan="6">Cargando…</td></tr>
+              <tr class="empty-row"><td colspan="7">Cargando…</td></tr>
             </tbody>
           </table>
         </div>
@@ -1128,6 +1130,38 @@
     </div>
   </div>
 
+  <!-- Modal: límites del plan de una empresa (solo super-admin) -->
+  <div id="org-limits-overlay" class="overlay" hidden>
+    <div class="modal">
+      <div class="drawer-header">
+        <h2 id="org-limits-title">Límites del plan</h2>
+        <button class="btn-icon" id="org-limits-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="org-limits-form" class="settings-form">
+        <label>
+          Canales de WhatsApp
+          <input name="max_channels" type="number" min="0" step="1" required />
+        </label>
+        <label>
+          Vendedores <span class="hint">(el administrador no cuenta)</span>
+          <input name="max_agents" type="number" min="0" step="1" required />
+        </label>
+        <label>
+          Respuestas de IA al mes
+          <input name="max_ai_messages" type="number" min="0" step="100" required />
+        </label>
+        <label>
+          Almacenamiento de archivos (MB)
+          <input name="max_storage_mb" type="number" min="0" step="50" required />
+        </label>
+        <div class="settings-actions">
+          <span id="org-limits-status" class="settings-status"></span>
+          <button type="submit" class="btn btn-primary">Guardar límites</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Modal: nueva empresa (solo super-admin) -->
   <div id="org-overlay" class="overlay" hidden>
     <div class="modal">
@@ -1147,6 +1181,14 @@
         <label>
           Vendedores permitidos <span class="hint">(el administrador no cuenta)</span>
           <input name="max_agents" type="number" min="0" step="1" value="5" required />
+        </label>
+        <label>
+          Respuestas de IA al mes
+          <input name="max_ai_messages" type="number" min="0" step="100" value="1000" required />
+        </label>
+        <label>
+          Almacenamiento de archivos (MB)
+          <input name="max_storage_mb" type="number" min="0" step="50" value="500" required />
         </label>
         <p class="hint">Primer administrador de la empresa: entra con correo y contraseña y administra a sus vendedores.</p>
         <label>

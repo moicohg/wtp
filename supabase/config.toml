@@ -8,3 +8,7 @@ verify_jwt = false
 
 [functions.whatsapp-handler]
 verify_jwt = true
+
+# Lo llama pg_cron (sin JWT) con el secreto x-cron-secret.
+[functions.purge-media]
+verify_jwt = false

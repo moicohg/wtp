@@ -794,6 +794,7 @@ async function setSection(section) {
     await loadAgenda();
   } else if (isCanales) {
     topbarTitle.textContent = 'Canales';
+    loadPlanUsage();
   } else if (isLeads) {
     topbarTitle.textContent = 'Leads';
   } else if (isProductos) {
@@ -2943,6 +2944,100 @@ dashTabsEl.addEventListener('click', (ev) => {
   renderDashboardTab();
 });
 
+// ── Límites del plan por empresa ─────────────────────────────────────────────
+
+const fmtBytes = (b) => (b >= 1073741824 ? `${(b / 1073741824).toFixed(1)} GB` : `${Math.round(b / 1048576)} MB`);
+const pctOf = (used, max) => (max > 0 ? Math.min(100, Math.round((used / max) * 100)) : used > 0 ? 100 : 0);
+
+function orgUsageCell(o) {
+  const u = o.usage;
+  if (!u) return '<span class="muted">—</span>';
+  return `<span class="org-usage">IA ${Number(u.ai_used).toLocaleString('es-PE')} / ${Number(u.ai_max).toLocaleString('es-PE')}<br>Archivos ${fmtBytes(u.storage_bytes)} / ${fmtBytes(u.storage_max_bytes)}</span>`;
+}
+
+const orgLimitsOverlay = document.getElementById('org-limits-overlay');
+const orgLimitsForm = document.getElementById('org-limits-form');
+const orgLimitsStatus = document.getElementById('org-limits-status');
+let orgLimitsTarget = null;
+
+function openOrgLimits(org) {
+  orgLimitsTarget = org;
+  document.getElementById('org-limits-title').textContent = `Límites del plan · ${org.name}`;
+  for (const key of ['max_channels', 'max_agents', 'max_ai_messages']) orgLimitsForm.elements[key].value = org[key];
+  orgLimitsForm.elements.max_storage_mb.value = org.max_storage_mb;
+  orgLimitsStatus.textContent = '';
+  orgLimitsOverlay.hidden = false;
+}
+
+orgLimitsForm.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const org = orgLimitsTarget;
+  const limits = {};
+  for (const key of ['max_channels', 'max_agents', 'max_ai_messages', 'max_storage_mb']) {
+    const n = Number.parseInt(orgLimitsForm.elements[key].value, 10);
+    if (!Number.isInteger(n) || n < 0) {
+      orgLimitsStatus.textContent = 'Usa números enteros mayores o iguales a 0.';
+      orgLimitsStatus.className = 'settings-status err';
+      return;
+    }
+    limits[key] = n;
+  }
+  orgLimitsStatus.textContent = 'Guardando…';
+  orgLimitsStatus.className = 'settings-status';
+  try {
+    await callAdminUsers('set_organization_limits', { organization_id: org.id, ...limits });
+  } catch (err) {
+    orgLimitsStatus.textContent = `Error: ${err.message}`;
+    orgLimitsStatus.className = 'settings-status err';
+    return;
+  }
+  orgLimitsOverlay.hidden = true;
+  await loadOrganizations();
+  if (org.id === state.me.organization.id) {
+    Object.assign(state.me.organization, { max_channels: limits.max_channels, max_agents: limits.max_agents });
+    renderChannelLimit();
+  }
+});
+document.getElementById('org-limits-close').addEventListener('click', () => (orgLimitsOverlay.hidden = true));
+orgLimitsOverlay.addEventListener('click', (ev) => {
+  if (ev.target === orgLimitsOverlay) orgLimitsOverlay.hidden = true;
+});
+
+// Tarjeta "Uso del plan" en Canales (el administrador ve cuánto lleva de cada tope).
+const cnUsageEl = document.getElementById('cn-usage');
+
+async function loadPlanUsage() {
+  if (!state.me?.isAdmin) return;
+  try {
+    renderPlanUsage(await callAdminUsers('get_usage'));
+  } catch (err) {
+    console.warn('No se pudo cargar el uso del plan:', err.message);
+  }
+}
+
+function renderPlanUsage(u) {
+  const rows = [
+    ['Canales de WhatsApp', u.channels.used, u.channels.max, `${u.channels.used} de ${u.channels.max}`],
+    ['Vendedores', u.agents.used, u.agents.max, `${u.agents.used} de ${u.agents.max}`],
+    ['Respuestas de IA este mes', u.ai_used, u.ai_max, `${Number(u.ai_used).toLocaleString('es-PE')} de ${Number(u.ai_max).toLocaleString('es-PE')}`],
+    ['Almacenamiento de archivos', u.storage_bytes, u.storage_max_bytes, `${fmtBytes(u.storage_bytes)} de ${fmtBytes(u.storage_max_bytes)}`],
+  ];
+  const aiFull = u.ai_used >= u.ai_max;
+  const storageFull = u.storage_bytes >= u.storage_max_bytes;
+  cnUsageEl.hidden = false;
+  cnUsageEl.innerHTML = `
+    <div class="cn-load-head"><h3>Uso del plan</h3></div>
+    <div class="plan-usage">
+      ${rows.map(([label, used, max, text]) => {
+        const p = pctOf(used, max);
+        return `<div class="plan-row"><div class="plan-row-top"><span>${label}</span><b>${text}</b></div><div class="ag-bar-track"><div class="${p >= 100 ? 'is-full' : p >= 80 ? 'is-warn' : ''}" style="width:${p}%"></div></div></div>`;
+      }).join('')}
+    </div>
+    ${aiFull ? '<p class="plan-alert">La IA está en pausa: se agotaron las respuestas de este mes. Tu equipo puede seguir respondiendo a mano. Pide ampliar el plan.</p>' : ''}
+    ${storageFull ? '<p class="plan-alert">Se agotó el almacenamiento: ya no se guardan archivos nuevos. Los adjuntos de más de 90 días se borran solos.</p>' : ''}
+    <p class="plan-note">Los adjuntos se conservan 90 días; después se borra el archivo y el mensaje se mantiene.</p>`;
+}
+
 // ── Render: Canales (lista + detalle) ────────────────────────────────────────
 // Tabla de canales con filtros, carga por asesor y un panel de detalle del canal
 // seleccionado. Todo sale de state.vendors / state.agents (datos reales de la empresa).
@@ -3493,6 +3588,9 @@ function closeChannelThread() {
 }
 
 function renderMessageContent(m) {
+  if (m.media_type && !m.media_url) {
+    return `<div class="media-expired">📎 Adjunto eliminado por antigüedad (más de 90 días)</div>${m.content ? `<div class="media-caption">${escapeHtml(m.content)}</div>` : ''}`;
+  }
   const caption = m.content ? `<div class="media-caption">${escapeHtml(m.content)}</div>` : '';
   switch (m.media_type) {
     case 'image':
@@ -4086,7 +4184,12 @@ async function uploadAndSendMedia(file, mediaType, caption = '') {
     // Prefijo de empresa: la política de subida solo permite la propia.
     const path = `${state.me.organization.id}/${prospectId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const { error: uploadError } = await supabase.storage.from('chat-media').upload(path, file, { contentType: file.type || undefined });
-    if (uploadError) throw new Error(`No se pudo subir el archivo: ${uploadError.message}`);
+    if (uploadError) {
+      if (/row-level security|violates/i.test(uploadError.message)) {
+        throw new Error('Tu empresa alcanzó el límite de almacenamiento de su plan. Pide ampliarlo para subir más archivos.');
+      }
+      throw new Error(`No se pudo subir el archivo: ${uploadError.message}`);
+    }
 
     const { data: pub } = supabase.storage.from('chat-media').getPublicUrl(path);
     setComposerStatus('Enviando…');
@@ -5006,7 +5109,7 @@ async function loadOrganizations() {
     const json = await callAdminUsers('list_organizations');
     state.organizations = json.organizations ?? [];
   } catch (err) {
-    orgsTbody.innerHTML = `<tr class="empty-row"><td colspan="6">Error cargando empresas: ${escapeHtml(err.message)}</td></tr>`;
+    orgsTbody.innerHTML = `<tr class="empty-row"><td colspan="7">Error cargando empresas: ${escapeHtml(err.message)}</td></tr>`;
     return;
   }
   renderOrgsTable();
@@ -5014,7 +5117,7 @@ async function loadOrganizations() {
 
 function renderOrgsTable() {
   if (!state.organizations.length) {
-    orgsTbody.innerHTML = `<tr class="empty-row"><td colspan="6">No hay empresas todavía.</td></tr>`;
+    orgsTbody.innerHTML = `<tr class="empty-row"><td colspan="7">No hay empresas todavía.</td></tr>`;
     return;
   }
   orgsTbody.innerHTML = state.organizations
@@ -5023,7 +5126,7 @@ function renderOrgsTable() {
       const expanded = state.expandedOrgIds.has(o.id);
       const users = state.profiles.filter((p) => p.organization_id === o.id);
       const usersRow = expanded
-        ? `<tr class="org-users-row"><td colspan="6"><div class="org-users">${
+        ? `<tr class="org-users-row"><td colspan="7"><div class="org-users">${
             users
               .map(
                 (p) => `
@@ -5041,6 +5144,7 @@ function renderOrgsTable() {
           <td><strong>${escapeHtml(o.name)}</strong>${isMine ? ' <span class="role-badge role-badge-info">Tu empresa</span>' : ''}</td>
           <td>${o.channels_count} / ${o.max_channels}</td>
           <td>${o.agents_count ?? 0} / ${o.max_agents}</td>
+          <td>${orgUsageCell(o)}</td>
           <td>${(o.admins ?? []).map((a) => escapeHtml(a.email)).join('<br>') || '—'}</td>
           <td>${o.is_active ? '<span class="role-badge role-badge-ok">Activa</span>' : '<span class="role-badge role-badge-off">Desactivada</span>'}</td>
           <td>
@@ -5074,32 +5178,7 @@ orgsTbody.addEventListener('click', async (ev) => {
     return;
   }
   if (btn.classList.contains('js-org-limit')) {
-    const askLimit = (label, current) => {
-      const raw = prompt(`${label} permitidos para ${org.name}:`, String(current));
-      if (raw === null) return null;
-      const n = Number.parseInt(raw, 10);
-      if (!Number.isInteger(n) || n < 0) {
-        alert('Escribe un número entero mayor o igual a 0.');
-        return null;
-      }
-      return n;
-    };
-    const max = askLimit('Canales de WhatsApp', org.max_channels);
-    if (max === null) return;
-    const maxAgents = askLimit('Vendedores (sin contar al administrador)', org.max_agents);
-    if (maxAgents === null) return;
-    try {
-      await callAdminUsers('set_organization_limits', { organization_id: org.id, max_channels: max, max_agents: maxAgents });
-    } catch (err) {
-      alert(`No se pudo cambiar el límite: ${err.message}`);
-      return;
-    }
-    await loadOrganizations();
-    if (org.id === state.me.organization.id) {
-      state.me.organization.max_channels = max;
-      state.me.organization.max_agents = maxAgents;
-      renderChannelLimit();
-    }
+    openOrgLimits(org);
     return;
   }
   if (btn.classList.contains('js-org-toggle')) {
@@ -5133,6 +5212,8 @@ orgForm.addEventListener('submit', async (ev) => {
     name: String(fd.get('name') ?? '').trim(),
     max_channels: Number.parseInt(String(fd.get('max_channels') ?? '1'), 10),
     max_agents: Number.parseInt(String(fd.get('max_agents') ?? '5'), 10),
+    max_ai_messages: Number.parseInt(String(fd.get('max_ai_messages') ?? '1000'), 10),
+    max_storage_mb: Number.parseInt(String(fd.get('max_storage_mb') ?? '500'), 10),
     admin: {
       email: String(fd.get('admin_email') ?? '').trim().toLowerCase(),
       password: String(fd.get('admin_password') ?? ''),

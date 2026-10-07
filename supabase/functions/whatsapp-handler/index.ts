@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { detectAppointment } from '../_shared/appointments.ts';
+import { aiAllowed, getOrgUsage, storageAllowed } from '../_shared/limits.ts';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -408,12 +409,15 @@ Deno.serve(async (req: Request) => {
 
     // 4. Guardar mensaje del usuario ANTES de la IA (persiste aunque la IA falle)
     // Si trae adjunto, se baja de Evolution y se sube a chat-media para que el panel lo muestre.
-    const stored = media ? await storeIncomingMedia(instanceId, key.id as string, media, vendor.organization_id, prospect.id) : null;
+    // Topes del plan: sin espacio no se guarda el archivo (el mensaje sí), y sin cupo de IA el bot no responde.
+    const usage = await getOrgUsage(supabase, vendor.organization_id);
+    const roomForMedia = storageAllowed(usage);
+    const stored = media && roomForMedia ? await storeIncomingMedia(instanceId, key.id as string, media, vendor.organization_id, prospect.id) : null;
     await supabase.from('messages').insert([
       {
         prospect_id: prospect.id,
         role: 'user',
-        content: incomingText,
+        content: incomingText || (media && !roomForMedia ? '📎 Adjunto no guardado: se alcanzó el límite de almacenamiento del plan' : ''),
         media_url: stored?.url ?? null,
         media_type: stored ? media!.type : null,
       },
@@ -427,12 +431,17 @@ Deno.serve(async (req: Request) => {
       return new Response('ok', { status: 200 });
     }
 
+    if (!aiAllowed(usage)) {
+      console.warn('[limites] cupo mensual de IA agotado — mensaje guardado sin respuesta. org:', vendor.organization_id);
+      return new Response('ok', { status: 200 });
+    }
+
     // 5. Llamar a la IA con la api_key del vendor
     const aiReply = await callAI(vendor, history, incomingText, prospect);
 
     // 6. Guardar respuesta del asistente
     await supabase.from('messages').insert([
-      { prospect_id: prospect.id, role: 'assistant', content: aiReply.reply },
+      { prospect_id: prospect.id, role: 'assistant', content: aiReply.reply, by_ai: true },
     ]);
 
     // 7. Actualizar prospect con datos extraídos y score

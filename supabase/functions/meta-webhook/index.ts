@@ -1,10 +1,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { detectAppointment } from '../_shared/appointments.ts';
+import { aiAllowed, getOrgUsage } from '../_shared/limits.ts';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
 interface Vendor {
   id: string;
+  organization_id: string;
   name: string;
   phone_number: string | null;
   meta_phone_number_id: string;
@@ -383,12 +385,18 @@ Deno.serve(async (req: Request) => {
             continue;
           }
 
+          // Tope mensual de respuestas de IA del plan: sin cupo el bot no responde, el equipo sí puede.
+          if (!aiAllowed(await getOrgUsage(supabase, vendor.organization_id))) {
+            console.warn('[limites] cupo mensual de IA agotado — mensaje guardado sin respuesta. org:', vendor.organization_id);
+            continue;
+          }
+
           // 5. Llamar a la IA
           const aiReply = await callAI(vendor, history, text, prospect);
 
           // 6. Guardar respuesta del asistente
           await supabase.from('messages').insert([
-            { prospect_id: prospect.id, role: 'assistant', content: aiReply.reply },
+            { prospect_id: prospect.id, role: 'assistant', content: aiReply.reply, by_ai: true },
           ]);
 
           // 7. Actualizar prospect

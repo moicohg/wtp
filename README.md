@@ -99,7 +99,7 @@ Tablas principales (todas en `public`):
 
 | Tabla | Descripción |
 |---|---|
-| `organizations` | Empresa cliente del SaaS. `max_channels` limita cuántos canales puede crear y `max_agents` cuántos vendedores (el administrador no cuenta) |
+| `organizations` | Empresa cliente del SaaS. `max_channels` limita cuántos canales puede crear y `max_agents` cuántos vendedores (el administrador no cuenta), `max_ai_messages` las respuestas de IA por mes y `max_storage_mb` el espacio en `chat-media` |
 | `profiles` | Una fila por usuario de Auth: empresa, tipo (`admin` / `vendedor`), super-admin, vínculo a `agents` |
 | `vendors` | Canal de WhatsApp con su bot: tipo (`evolution` / `meta`), credenciales, proveedor de IA, prompt, vendedor asignado, keywords |
 | `agents` | Vendedor humano: nombre, teléfono, rol, estado en tiempo real, prioridad, vencimiento de acceso |
@@ -135,6 +135,9 @@ Desde el 2026-09-13 el CRM es multi-empresa con login real. Reglas:
 - **Escrituras solo por Edge Functions**: `organizations`, `profiles` y `messages` se escriben únicamente con `service_role`. En `prospects` el panel solo puede actualizar columnas "humanas"; score, label y paso son de la IA.
 - **Límite de canales**: trigger `enforce_channel_limit` lanza `LIMITE_CANALES:<n>` al superar `max_channels`.
 - **Límite de vendedores**: trigger `enforce_agent_limit` lanza `LIMITE_VENDEDORES:<n>` al superar `max_agents`. Solo cuentan filas de `agents`.
+- **Tope de IA al mes**: `whatsapp-handler` y `meta-webhook` consultan `org_usage()`; sin cupo guardan el mensaje y no responden (el equipo sí puede). Las respuestas del bot se marcan con `messages.by_ai`.
+- **Tope de almacenamiento**: la política de subida a `chat-media` exige `org_storage_ok()`; `whatsapp-handler` no guarda adjuntos entrantes sin espacio.
+- **Borrado de adjuntos**: pg_cron llama cada día (08:00 UTC) a `purge-media`, que borra los archivos de más de 90 días y deja `media_url` en null (el mensaje se conserva). El secreto compartido está en Vault (`cron_secret`) y en el secret `CRON_SECRET`.
 - **Un vendedor solo cambia su propio estado**: trigger `agents_guard_self_update` evita que se autoasigne un rol o cambie su vencimiento.
 
 ### Permisos
@@ -161,6 +164,7 @@ Al crear una empresa, un trigger siembra los roles "Administrador" (sistema) y "
 |---|---|---|---|
 | `whatsapp-handler` | Evolution API (webhook, `verify_jwt=true`) | JWT en el gateway; escribe con service_role | Recibe el mensaje, crea/actualiza el prospecto, llama a la IA del canal y responde. Ignora mensajes propios, grupos y mensajes sin texto |
 | `meta-webhook` | Meta Cloud API (webhook, `verify_jwt=false`) | verificación `hub.verify_token` | Igual que la anterior para canales Meta. GET responde el challenge de verificación |
+| `purge-media` | pg_cron (sin JWT, `verify_jwt=false`) | cabecera `x-cron-secret` = `CRON_SECRET` | Borra adjuntos del chat con más de 90 días |
 | `evolution-connect` | Panel (crear canal QR) | sesión + `config.manage_channels` | Crea la instancia en Evolution API con el webhook hacia `whatsapp-handler`, devuelve el QR y consulta si ya se escaneó (`create` / `status` / `delete`) |
 | `send-message` | Panel (chat) | sesión + acceso al chat | Envía texto o adjunto por Evolution o Meta y guarda el mensaje como `assistant` |
 | `admin-users` | Panel (Configuración y Empresas) | sesión + `users.manage_users` o super-admin | Acciones: `create_organization`, `list_organizations`, `set_organization_active`, `set_organization_limits`, `create_user`, `update_user`, `reset_password`, `set_active`, `delete_user` |
