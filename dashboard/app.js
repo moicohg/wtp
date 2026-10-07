@@ -426,7 +426,6 @@ const placeholderIcon = document.getElementById('placeholder-icon');
 const placeholderTitle = document.getElementById('placeholder-title');
 const placeholderText = document.getElementById('placeholder-text');
 
-const vendorCardsEl = document.getElementById('vendor-cards');
 
 const viewProductos = document.getElementById('view-productos');
 const productsSearchInput = document.getElementById('products-search');
@@ -702,7 +701,7 @@ function renderSidenavVendors() {
 }
 
 function syncSidenavActive() {
-  const canalesParentActive = state.section === 'canales-lista' || state.section === 'bandeja-global' || state.section.startsWith('vendor:');
+  const canalesParentActive = state.section === 'canales-lista' || state.section.startsWith('vendor:');
   sidenavEl.querySelectorAll('.sidenav-item, .sidenav-subitem').forEach((el) => {
     const isCanalesParent = el.classList.contains('is-parent');
     const matches = isCanalesParent ? canalesParentActive : el.dataset.section === state.section;
@@ -912,6 +911,7 @@ async function loadAgents() {
   ciAgent.innerHTML = '<option value="">Vendedor del canal</option>' + agentOptions;
   renderVendedoresFilter();
   renderStatusPill();
+  renderVendorCards(); // los asesores pueden llegar después que los canales
 }
 
 // Usuarios con login. RLS: un admin ve los de su empresa; el super-admin, todos.
@@ -2941,84 +2941,191 @@ dashTabsEl.addEventListener('click', (ev) => {
   renderDashboardTab();
 });
 
-// ── Render: Canales (tarjetas) ───────────────────────────────────────────────
+// ── Render: Canales (lista + detalle) ────────────────────────────────────────
+// Tabla de canales con filtros, carga por asesor y un panel de detalle del canal
+// seleccionado. Todo sale de state.vendors / state.agents (datos reales de la empresa).
 
-function renderVendorCards() {
-  if (!state.vendors.length) {
-    vendorCardsEl.innerHTML = '<p class="muted">Todavía no tienes canales. Crea uno con “Agregar canal”.</p>';
-    return;
-  }
+const cnState = { selectedId: null, filter: 'todos', search: '', agent: '' };
+const cnTabsEl = document.getElementById('cn-tabs');
+const cnSearchEl = document.getElementById('cn-search');
+const cnAgentFilterEl = document.getElementById('cn-agent-filter');
+const cnTableEl = document.getElementById('cn-table');
+const cnLoadEl = document.getElementById('cn-load');
+const cnDetailEl = document.getElementById('cn-detail');
+const cnEyebrowEl = document.getElementById('cn-eyebrow');
+const cnBadgeEl = document.getElementById('nav-canales-badge');
 
-  vendorCardsEl.innerHTML = state.vendors
-    .map((v) => {
-      const connected = v.channel_type === 'meta' ? v.meta_verified : Boolean(v.evolution_connected);
-      const iaActiva = Boolean(v.ai_key_set);
-      const agent = state.agents.find((a) => a.id === v.assigned_agent_id);
-      const keywords = v.keywords ?? [];
-      const canManage = can('config.manage_channels');
-      const canAi = can('config.ai_settings');
+const isVendorConnected = (v) => (v.channel_type === 'meta' ? Boolean(v.meta_verified) : Boolean(v.evolution_connected));
+const vendorAgent = (v) => state.agents.find((a) => a.id === v.assigned_agent_id);
 
-      return `
-      <div class="vendor-card" data-id="${v.id}">
-        <div class="vendor-card-top">
-          <div class="vendor-status">
-            <span class="status-pill ${connected ? 'is-on' : ''}">${connected ? 'Conectado' : 'Sin conectar'}</span>
-            <span class="status-pill ${iaActiva ? 'is-on' : ''}">${iaActiva ? '⚡ IA Activa' : 'IA sin configurar'}</span>
-          </div>
-          <div class="vendor-card-icons">
-            ${canManage ? '<button class="btn-icon js-delete-vendor" type="button" title="Eliminar canal" aria-label="Eliminar canal">🗑</button>' : ''}
-          </div>
-        </div>
-
-        <div class="vendor-identity">
-          <div class="avatar" style="background:${colorFor(v.id)}">${initials(v.name)}</div>
-          <div>
-            <div class="vendor-name">${escapeHtml(v.name)}</div>
-            <div class="vendor-phone">${escapeHtml(v.phone_number) || '—'}</div>
-          </div>
-        </div>
-
-        <button type="button" class="vendor-assigned ${canManage ? 'js-open-assign' : ''}" ${canManage ? '' : 'disabled'}>
-          👤 ${agent ? `Asignado a <strong>${escapeHtml(agent.name)}</strong>` : 'Sin asignar'}
-        </button>
-
-        <div>
-          <div class="vendor-block-label">📝 Prompt</div>
-          <div class="vendor-prompt-preview">${escapeHtml(v.system_prompt) || 'Sin prompt configurado.'}</div>
-        </div>
-
-        <div>
-          <div class="vendor-block-label">🏷 Palabras clave</div>
-          <div class="vendor-keywords">${
-            keywords.length ? keywords.map((k) => `<span class="keyword-chip">${escapeHtml(k)}</span>`).join('') : 'Sin palabras clave'
-          }</div>
-        </div>
-
-        <div class="vendor-actions">
-          ${canAi ? '<button type="button" class="btn js-open-settings">⚙ Configurar</button>' : ''}
-          <button type="button" class="btn" disabled title="Próximamente">📊 Pixel</button>
-          <button type="button" class="btn" disabled title="Próximamente">📋 Formularios</button>
-          ${canManage ? '<button type="button" class="btn js-open-assign">👤 Asignar</button>' : ''}
-          <button type="button" class="btn" disabled title="Próximamente">⬆ Importar</button>
-          ${canManage ? '<button type="button" class="btn btn-danger js-delete-vendor">🗑 Eliminar</button>' : ''}
-        </div>
-      </div>`;
-    })
-    .join('');
+function cnAvatar(name, id, small = false) {
+  return `<span class="cn-avatar ${small ? 'is-sm' : ''}" style="background:${colorFor(id)}">${escapeHtml(initials(name))}</span>`;
 }
 
-vendorCardsEl.addEventListener('click', async (ev) => {
-  const card = ev.target.closest('.vendor-card');
-  if (!card) return;
-  const vendorId = card.dataset.id;
+function cnFiltered() {
+  const q = cnState.search.trim().toLowerCase();
+  return state.vendors.filter((v) => {
+    if (cnState.filter === 'conectados' && !isVendorConnected(v)) return false;
+    if (cnState.filter === 'desconectados' && isVendorConnected(v)) return false;
+    if (cnState.filter === 'ia-inactiva' && v.ai_key_set) return false;
+    if (cnState.agent === '__none' && v.assigned_agent_id) return false;
+    if (cnState.agent && cnState.agent !== '__none' && v.assigned_agent_id !== cnState.agent) return false;
+    if (q && !`${v.name} ${v.phone_number ?? ''}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
 
-  if (ev.target.closest('.js-open-settings')) {
-    openSettings(vendorId);
-  } else if (ev.target.closest('.js-open-assign')) {
-    openAssign(vendorId);
-  } else if (ev.target.closest('.js-delete-vendor')) {
-    await deleteVendor(vendorId);
+function renderVendorCards() {
+  const vendors = state.vendors;
+  const advisors = state.agents.filter((a) => vendors.some((v) => v.assigned_agent_id === a.id));
+  const n = vendors.length;
+  cnEyebrowEl.textContent = `${n} ${n === 1 ? 'número' : 'números'} de WhatsApp · ${state.agents.length} ${state.agents.length === 1 ? 'asesor' : 'asesores'}`;
+  cnBadgeEl.textContent = n;
+  cnBadgeEl.hidden = !n;
+
+  if (!vendors.some((v) => v.id === cnState.selectedId)) cnState.selectedId = vendors[0]?.id ?? null;
+
+  // Filtros
+  const count = (fn) => vendors.filter(fn).length;
+  const tabs = [
+    ['todos', 'Todos', n],
+    ['conectados', 'Conectados', count(isVendorConnected)],
+    ['desconectados', 'Desconectados', count((v) => !isVendorConnected(v))],
+    ['ia-inactiva', 'IA inactiva', count((v) => !v.ai_key_set)],
+  ];
+  cnTabsEl.innerHTML = tabs
+    .map(([k, l, c]) => `<button type="button" class="${cnState.filter === k ? 'is-active' : ''}" data-cn-filter="${k}">${l} <span>${c}</span></button>`)
+    .join('');
+  const agentOptions =
+    '<option value="">Todos los asesores</option><option value="__none">Sin asignar</option>' +
+    state.agents.map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+  if (cnAgentFilterEl.dataset.sig !== agentOptions) {
+    cnAgentFilterEl.innerHTML = agentOptions;
+    cnAgentFilterEl.dataset.sig = agentOptions;
   }
+  cnAgentFilterEl.value = cnState.agent;
+
+  // Tabla
+  const list = cnFiltered();
+  if (!n) {
+    cnTableEl.innerHTML = '<div class="ag-empty"><b>Todavía no tienes canales</b><p>Crea uno con “Agregar canal” y conecta tu WhatsApp.</p></div>';
+  } else {
+    cnTableEl.innerHTML = `
+      <div class="cn-row cn-row-head"><span>CANAL</span><span>ESTADO</span><span>IA</span><span>ASESOR</span><span></span></div>
+      ${list.length ? list.map((v) => {
+        const connected = isVendorConnected(v);
+        const agent = vendorAgent(v);
+        return `<div class="cn-row ${v.id === cnState.selectedId ? 'is-selected' : ''}" data-id="${v.id}">
+          <span class="cn-channel">${cnAvatar(v.name, v.id)}<span><b>${escapeHtml(v.name)}</b><small>${escapeHtml(v.phone_number ? agFormatPhone(v.phone_number) : '—')}</small></span></span>
+          <span><span class="cn-pill ${connected ? 'is-on' : 'is-off'}">${connected ? 'Conectado' : 'Sin conectar'}</span></span>
+          <span><span class="cn-pill ${v.ai_key_set ? 'is-ia' : 'is-off'}">${v.ai_key_set ? 'IA activa' : 'Sin configurar'}</span></span>
+          <span class="cn-advisor">${agent ? `${cnAvatar(agent.name, agent.id, true)}${escapeHtml(agent.name)}` : '<span class="muted">Sin asignar</span>'}</span>
+          <span class="cn-chevron">›</span>
+        </div>`;
+      }).join('') : '<div class="ag-empty"><p>Ningún canal coincide con los filtros.</p></div>'}
+      <div class="cn-foot"><span>Mostrando ${list.length} de ${n} ${n === 1 ? 'canal' : 'canales'}</span><span>Selecciona un canal para ver su prompt e integraciones</span></div>`;
+  }
+
+  // Carga por asesor
+  cnLoadEl.innerHTML = advisors.length
+    ? `<div class="cn-load-head"><h3>Carga por asesor</h3>${can('users.manage_users') ? '<button type="button" class="cn-link" data-cn-act="advisors">Gestionar asesores</button>' : ''}</div>
+       <div class="cn-load-grid">${advisors.map((a) => {
+         const c = vendors.filter((v) => v.assigned_agent_id === a.id).length;
+         return `<div class="cn-load-item">${cnAvatar(a.name, a.id)}<span><b>${escapeHtml(a.name)}</b><small>${c} ${c === 1 ? 'canal activo' : 'canales activos'}</small></span></div>`;
+       }).join('')}</div>`
+    : `<div class="cn-load-head"><h3>Carga por asesor</h3>${can('users.manage_users') ? '<button type="button" class="cn-link" data-cn-act="advisors">Gestionar asesores</button>' : ''}</div>
+       <div class="ag-empty"><p>Aún no hay canales asignados a un asesor.</p></div>`;
+
+  renderCanalDetail();
+}
+
+function renderCanalDetail() {
+  const v = state.vendors.find((x) => x.id === cnState.selectedId);
+  if (!v) {
+    cnDetailEl.innerHTML = '<div class="ag-empty"><p>Selecciona un canal para ver su detalle.</p></div>';
+    return;
+  }
+  const connected = isVendorConnected(v);
+  const agent = vendorAgent(v);
+  const keywords = v.keywords ?? [];
+  const canManage = can('config.manage_channels');
+  const canAi = can('config.ai_settings');
+  const words = (v.system_prompt ?? '').split(/\s+/).filter(Boolean).length;
+  cnDetailEl.innerHTML = `
+    <div class="cn-d-head">
+      <span class="cn-avatar is-lg" style="background:${colorFor(v.id)}">${escapeHtml(initials(v.name))}</span>
+      <div><div class="cn-d-name">${escapeHtml(v.name)}</div><div class="cn-d-phone">${escapeHtml(v.phone_number ? agFormatPhone(v.phone_number) : '—')}</div></div>
+    </div>
+    <div class="cn-d-pills">
+      <span class="cn-pill ${connected ? 'is-on' : 'is-off'}">${connected ? 'Conectado' : 'Sin conectar'}</span>
+      <span class="cn-pill ${v.ai_key_set ? 'is-ia' : 'is-off'}">${v.ai_key_set ? '⚡ IA respondiendo' : 'IA sin configurar'}</span>
+      <span class="cn-pill is-type">${v.channel_type === 'meta' ? 'Meta oficial' : 'Conexión QR'}</span>
+    </div>
+
+    ${!connected && v.channel_type === 'evolution' && canManage
+      ? '<div class="cn-reconnect"><p>La sesión de WhatsApp de este canal se cerró. Escanea un QR nuevo para volver a recibir y responder mensajes.</p><button type="button" class="ag-btn-primary" data-cn-act="reconnect">📱 Reconectar con QR</button></div>'
+      : ''}
+
+    <div class="cn-d-sec">
+      <div class="cn-d-label"><span>ASESOR ASIGNADO</span>${canManage ? '<button type="button" class="cn-link" data-cn-act="assign">Cambiar</button>' : ''}</div>
+      ${agent
+        ? `<div class="cn-d-agent">${cnAvatar(agent.name, agent.id)}<span><b>${escapeHtml(agent.name)}</b>${agent.email ? `<small>${escapeHtml(agent.email)}</small>` : ''}</span></div>`
+        : '<p class="muted cn-d-empty">Sin asignar</p>'}
+    </div>
+
+    <div class="cn-d-sec">
+      <div class="cn-d-label"><span>PROMPT DE LA IA</span>${canAi ? '<button type="button" class="cn-link" data-cn-act="settings">Editar</button>' : ''}</div>
+      <div class="cn-d-prompt">${v.system_prompt ? `${escapeHtml(v.system_prompt)}<small>${words.toLocaleString('es-PE')} palabras</small>` : '<span class="muted">Sin prompt configurado.</span>'}</div>
+    </div>
+
+    <div class="cn-d-sec">
+      <div class="cn-d-label"><span>PALABRAS CLAVE</span></div>
+      ${keywords.length
+        ? `<div class="vendor-keywords">${keywords.map((k) => `<span class="keyword-chip">${escapeHtml(k)}</span>`).join('')}</div>`
+        : `<button type="button" class="cn-add-kw" ${canAi ? 'data-cn-act="settings"' : 'disabled'}>+ Agregar palabras que activan respuestas</button>`}
+    </div>
+
+    <div class="cn-d-sec">
+      <div class="cn-d-label"><span>INTEGRACIONES</span></div>
+      <div class="cn-integ"><span class="cn-integ-ico">📊</span><b>Pixel de Meta</b><small>Próximamente</small></div>
+      <div class="cn-integ"><span class="cn-integ-ico">📋</span><b>Formularios</b><small>Próximamente</small></div>
+    </div>
+
+    <div class="cn-d-actions">
+      ${canAi ? '<button type="button" class="ag-btn-primary" data-cn-act="settings">⚙ Configurar canal</button>' : ''}
+      <button type="button" class="ag-btn ag-btn-sq" data-cn-act="chats" title="Ver conversaciones" aria-label="Ver conversaciones">💬</button>
+      <button type="button" class="ag-btn ag-btn-sq" disabled title="Importar: próximamente" aria-label="Importar">⬇</button>
+      ${canManage ? '<button type="button" class="ag-btn ag-btn-sq cn-danger" data-cn-act="delete" title="Eliminar canal" aria-label="Eliminar canal">🗑</button>' : ''}
+    </div>`;
+}
+
+viewCanales.addEventListener('click', async (ev) => {
+  const filter = ev.target.closest('[data-cn-filter]');
+  if (filter) {
+    cnState.filter = filter.dataset.cnFilter;
+    return renderVendorCards();
+  }
+  const act = ev.target.closest('[data-cn-act]')?.dataset.cnAct;
+  const id = cnState.selectedId;
+  if (act === 'reconnect') return reconnectVendorQr(id);
+  if (act === 'settings') return openSettings(id);
+  if (act === 'assign') return openAssign(id);
+  if (act === 'chats') return setSection(`vendor:${id}`);
+  if (act === 'delete') return deleteVendor(id);
+  if (act === 'advisors') return setSection('configuracion');
+  const row = ev.target.closest('.cn-row[data-id]');
+  if (row) {
+    cnState.selectedId = row.dataset.id;
+    renderVendorCards();
+  }
+});
+cnSearchEl.addEventListener('input', () => {
+  cnState.search = cnSearchEl.value;
+  renderVendorCards();
+});
+cnAgentFilterEl.addEventListener('change', () => {
+  cnState.agent = cnAgentFilterEl.value;
+  renderVendorCards();
 });
 
 async function deleteVendor(vendorId) {
@@ -4388,12 +4495,41 @@ async function createVendorEvolution(fd, name) {
   await loadVendors();
 }
 
+// Vuelve a vincular un canal QR que perdió la sesión de WhatsApp (teléfono desvinculado, etc.).
+// El canal y sus conversaciones se conservan: solo se pide un QR nuevo para la misma instancia.
+async function reconnectVendorQr(vendorId) {
+  stopQrSession();
+  document.getElementById('vendor-modal-title').textContent = 'Reconectar canal';
+  vendorForm.hidden = true;
+  vendorQrPanel.hidden = false;
+  vendorQrImg.removeAttribute('src');
+  showQr(null);
+  setQrStatus('Generando código…');
+  vendorOverlay.hidden = false;
+  try {
+    const st = await callEvolutionConnect({ action: 'status', vendor_id: vendorId });
+    if (st.connected) {
+      stopQrSession();
+      vendorOverlay.hidden = true;
+      await loadVendors();
+      return;
+    }
+    showQr(st.qr);
+    setQrStatus('Esperando que escanees el código…');
+    qrSession = { vendorId, timer: null, startedAt: Date.now(), reconnect: true };
+    scheduleQrPoll(qrSession, st.qr ? QR_POLL_MS : 1000);
+  } catch (err) {
+    setQrStatus(`Error: ${err.message}`, 'err');
+  }
+}
+
 // Cerrar el modal con un QR pendiente cancela el canal (si no, quedaría "Sin conectar").
 async function closeVendorModal() {
   const session = qrSession;
   stopQrSession();
   vendorOverlay.hidden = true;
   if (!session) return;
+  if (session.reconnect) return loadVendors(); // un canal que ya existía no se borra al cancelar
   try {
     await callEvolutionConnect({ action: 'delete', vendor_id: session.vendorId });
   } catch (err) {
@@ -5354,6 +5490,7 @@ settingsOverlay.addEventListener('click', (ev) => {
 settingsForm.addEventListener('submit', saveSettings);
 
 document.getElementById('create-vendor-btn').addEventListener('click', () => {
+  document.getElementById('vendor-modal-title').textContent = 'Agregar canal';
   vendorForm.reset();
   vendorStatus.textContent = '';
   updateVendorFormConnectionType();
