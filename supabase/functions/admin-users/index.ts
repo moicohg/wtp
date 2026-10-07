@@ -90,6 +90,16 @@ async function loadTarget(caller: Caller, body: Body): Promise<TargetProfile> {
 
 // ── Acciones ─────────────────────────────────────────────────────────────────
 
+// Fecha de vencimiento: 'YYYY-MM-DD' o null/'' (sin vencimiento). undefined = no tocar.
+function parsePlanDate(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value))) {
+    throw new HttpError(400, 'plan_expires_at debe ser una fecha AAAA-MM-DD');
+  }
+  return value;
+}
+
 async function createOrganization(caller: Caller, body: Body) {
   requireSuperAdmin(caller);
   const name = requireStr(body, 'name', 'el nombre de la empresa');
@@ -101,6 +111,7 @@ async function createOrganization(caller: Caller, body: Body) {
   if (maxAiMessages < 0) throw new HttpError(400, 'max_ai_messages no puede ser negativo');
   const maxStorageMb = Number.isInteger(body.max_storage_mb) ? (body.max_storage_mb as number) : 500;
   if (maxStorageMb < 0) throw new HttpError(400, 'max_storage_mb no puede ser negativo');
+  const planExpiresAt = parsePlanDate(body.plan_expires_at) ?? null;
   const adminBody = (body.admin ?? {}) as Body;
   const email = requireStr(adminBody, 'email', 'el correo del administrador').toLowerCase();
   const password = requirePassword(adminBody);
@@ -108,7 +119,7 @@ async function createOrganization(caller: Caller, body: Body) {
 
   const { data: org, error: orgError } = await admin
     .from('organizations')
-    .insert({ name, max_channels: maxChannels, max_agents: maxAgents, max_ai_messages: maxAiMessages, max_storage_mb: maxStorageMb })
+    .insert({ name, max_channels: maxChannels, max_agents: maxAgents, max_ai_messages: maxAiMessages, max_storage_mb: maxStorageMb, plan_expires_at: planExpiresAt })
     .select('*')
     .single();
   if (orgError || !org) throw new HttpError(500, orgError?.message ?? 'No se pudo crear la empresa');
@@ -171,7 +182,7 @@ async function getUsage(caller: Caller) {
   if (!caller.isAdmin) throw new HttpError(403, 'Solo el administrador de la empresa puede ver el consumo del plan');
   const orgId = caller.organizationId;
   const [org, channels, agents, usage] = await Promise.all([
-    admin.from('organizations').select('max_channels, max_agents').eq('id', orgId).single(),
+    admin.from('organizations').select('max_channels, max_agents, plan_expires_at').eq('id', orgId).single(),
     admin.from('vendors').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
     admin.from('agents').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
     admin.rpc('org_usage', { p_org: orgId }),
@@ -180,6 +191,7 @@ async function getUsage(caller: Caller) {
   return json({
     channels: { used: channels.count ?? 0, max: org.data.max_channels },
     agents: { used: agents.count ?? 0, max: org.data.max_agents },
+    plan_expires_at: org.data.plan_expires_at,
     ...(usage.data ?? {}),
   });
 }
@@ -205,8 +217,11 @@ async function setOrganizationLimits(caller: Caller, body: Body) {
     if (!Number.isInteger(value) || (value as number) < 0) throw new HttpError(400, `${key} inválido`);
     patch[key] = value as number;
   }
-  if (!Object.keys(patch).length) throw new HttpError(400, 'Nada que actualizar');
-  const { error } = await admin.from('organizations').update(patch).eq('id', id);
+  const planDate = parsePlanDate(body.plan_expires_at);
+  const fullPatch: Record<string, number | string | null> = { ...patch };
+  if (planDate !== undefined) fullPatch.plan_expires_at = planDate;
+  if (!Object.keys(fullPatch).length) throw new HttpError(400, 'Nada que actualizar');
+  const { error } = await admin.from('organizations').update(fullPatch).eq('id', id);
   if (error) throw new HttpError(500, error.message);
   return json({ success: true });
 }

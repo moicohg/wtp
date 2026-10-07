@@ -99,7 +99,7 @@ Tablas principales (todas en `public`):
 
 | Tabla | Descripción |
 |---|---|
-| `organizations` | Empresa cliente del SaaS. `max_channels` limita cuántos canales puede crear y `max_agents` cuántos vendedores (el administrador no cuenta), `max_ai_messages` las respuestas de IA por mes y `max_storage_mb` el espacio en `chat-media` |
+| `organizations` | Empresa cliente del SaaS. `max_channels` limita cuántos canales puede crear y `max_agents` cuántos vendedores (el administrador no cuenta), `max_ai_messages` las respuestas de IA por mes y `max_storage_mb` el espacio en `chat-media` y `plan_expires_at` el último día de acceso (null = sin vencimiento) |
 | `profiles` | Una fila por usuario de Auth: empresa, tipo (`admin` / `vendedor`), super-admin, vínculo a `agents` |
 | `vendors` | Canal de WhatsApp con su bot: tipo (`evolution` / `meta`), credenciales, proveedor de IA, prompt, vendedor asignado, keywords |
 | `agents` | Vendedor humano: nombre, teléfono, rol, estado en tiempo real, prioridad, vencimiento de acceso |
@@ -135,6 +135,7 @@ Desde el 2026-09-13 el CRM es multi-empresa con login real. Reglas:
 - **Escrituras solo por Edge Functions**: `organizations`, `profiles` y `messages` se escriben únicamente con `service_role`. En `prospects` el panel solo puede actualizar columnas "humanas"; score, label y paso son de la IA.
 - **Límite de canales**: trigger `enforce_channel_limit` lanza `LIMITE_CANALES:<n>` al superar `max_channels`.
 - **Límite de vendedores**: trigger `enforce_agent_limit` lanza `LIMITE_VENDEDORES:<n>` al superar `max_agents`. Solo cuentan filas de `agents`.
+- **Vencimiento del plan**: `current_profile()` (filtro de todas las políticas RLS) deja sin acceso a la empresa cuando `plan_expires_at` es anterior a hoy en hora de Lima; el super-admin queda exento. `getCaller` (Edge Functions) y el panel (pantalla "Plan vencido") aplican la misma regla, y el bot de IA se detiene (`org_usage.plan_active`). Renovar es mover la fecha desde Empresas (🔢, botón "+30 días"). El administrador ve un aviso cuando faltan 7 días o menos.
 - **Tope de IA al mes**: `whatsapp-handler` y `meta-webhook` consultan `org_usage()`; sin cupo guardan el mensaje y no responden (el equipo sí puede). Las respuestas del bot se marcan con `messages.by_ai`.
 - **Tope de almacenamiento**: la política de subida a `chat-media` exige `org_storage_ok()`; `whatsapp-handler` no guarda adjuntos entrantes sin espacio.
 - **Borrado de adjuntos**: pg_cron llama cada día (08:00 UTC) a `purge-media`, que borra los archivos de más de 90 días y deja `media_url` en null (el mensaje se conserva). El secreto compartido está en Vault (`cron_secret`) y en el secret `CRON_SECRET`.

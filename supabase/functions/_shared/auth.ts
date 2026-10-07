@@ -56,7 +56,7 @@ export interface CallerProfile {
   full_name: string | null;
   email: string;
   phone: string | null;
-  organization: { id: string; name: string; is_active: boolean; max_channels: number } | null;
+  organization: { id: string; name: string; is_active: boolean; max_channels: number; plan_expires_at: string | null } | null;
   agent: {
     id: string;
     name: string;
@@ -92,7 +92,7 @@ export async function getCaller(req: Request): Promise<Caller> {
     .from('profiles')
     .select(
       'id, organization_id, user_type, is_super_admin, is_active, agent_id, full_name, email, phone, ' +
-        'organization:organizations(id, name, is_active, max_channels), ' +
+        'organization:organizations(id, name, is_active, max_channels, plan_expires_at), ' +
         'agent:agents(id, name, access_expires_at, role_id, role:roles(id, name, permissions))'
     )
     .eq('id', user.id)
@@ -101,6 +101,13 @@ export async function getCaller(req: Request): Promise<Caller> {
   const profile = profileRow as unknown as CallerProfile | null;
   if (!profile) throw new HttpError(403, 'Tu usuario no tiene acceso a ninguna empresa');
   if (!profile.is_active || !profile.organization?.is_active) throw new HttpError(403, 'Acceso deshabilitado');
+
+  // Plan vencido: la fecha es el último día vigente (hora de Lima). El super-admin queda exento.
+  const planEnd = profile.organization?.plan_expires_at;
+  const limaToday = new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 10);
+  if (planEnd && !profile.is_super_admin && planEnd < limaToday) {
+    throw new HttpError(403, `El plan de tu empresa venció el ${planEnd}. Contacta al administrador de la plataforma para renovarlo`);
+  }
 
   const today = new Date().toISOString().slice(0, 10);
   if (profile.user_type === 'vendedor' && profile.agent?.access_expires_at && profile.agent.access_expires_at < today) {

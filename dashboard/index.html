@@ -81,6 +81,7 @@
     </aside>
 
     <div class="main">
+      <div id="plan-banner" class="plan-banner" hidden></div>
       <header class="topbar">
         <h2 id="topbar-title">Canales</h2>
         <div class="topbar-actions">
@@ -489,6 +490,7 @@
                 <th>Empresa</th>
                 <th>Canales</th>
                 <th>Vendedores</th>
+                <th>Vence</th>
                 <th>Uso del mes</th>
                 <th>Administradores</th>
                 <th>Estado</th>
@@ -496,7 +498,7 @@
               </tr>
             </thead>
             <tbody id="orgs-tbody">
-              <tr class="empty-row"><td colspan="7">Cargando…</td></tr>
+              <tr class="empty-row"><td colspan="8">Cargando…</td></tr>
             </tbody>
           </table>
         </div>
@@ -1154,6 +1156,13 @@
           Almacenamiento de archivos (MB)
           <input name="max_storage_mb" type="number" min="0" step="50" required />
         </label>
+        <label>
+          Plan vence el <span class="hint">(último día de acceso; vacío = sin vencimiento)</span>
+          <div class="date-renew">
+            <input name="plan_expires_at" type="date" />
+            <button type="button" class="btn" id="org-limits-renew">+30 días</button>
+          </div>
+        </label>
         <div class="settings-actions">
           <span id="org-limits-status" class="settings-status"></span>
           <button type="submit" class="btn btn-primary">Guardar límites</button>
@@ -1189,6 +1198,10 @@
         <label>
           Almacenamiento de archivos (MB)
           <input name="max_storage_mb" type="number" min="0" step="50" value="500" required />
+        </label>
+        <label>
+          Plan vence el <span class="hint">(último día de acceso; vacío = sin vencimiento)</span>
+          <input name="plan_expires_at" type="date" />
         </label>
         <p class="hint">Primer administrador de la empresa: entra con correo y contraseña y administra a sus vendedores.</p>
         <label>

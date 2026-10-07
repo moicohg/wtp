@@ -2944,6 +2944,40 @@ dashTabsEl.addEventListener('click', (ev) => {
   renderDashboardTab();
 });
 
+// ── Vencimiento del plan ─────────────────────────────────────────────────────
+// plan_expires_at = último día de acceso (inclusive, hora de Lima); null = sin vencimiento.
+
+const limaToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+const daysUntil = (dateStr) => Math.round((Date.parse(`${dateStr}T00:00:00Z`) - Date.parse(`${limaToday()}T00:00:00Z`)) / 86400000);
+const fmtPlanDate = (dateStr) => new Date(`${dateStr}T12:00:00Z`).toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const addDays = (dateStr, n) => new Date(Date.parse(`${dateStr}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+
+function orgPlanCell(o) {
+  if (!o.plan_expires_at) return '<span class="role-badge role-badge-info">Sin vencimiento</span>';
+  const d = daysUntil(o.plan_expires_at);
+  const label = fmtPlanDate(o.plan_expires_at);
+  if (d < 0) return `<span class="role-badge role-badge-off">Vencido</span><br><small class="muted">${label}</small>`;
+  if (d <= 7) return `<span class="role-badge role-badge-warn">${d === 0 ? 'Vence hoy' : `Vence en ${d} d`}</span><br><small class="muted">${label}</small>`;
+  return `<span class="role-badge role-badge-ok">Vigente</span><br><small class="muted">hasta ${label}</small>`;
+}
+
+// Aviso para el administrador cuando faltan 7 días o menos (los vendedores no lo ven).
+function renderPlanBanner() {
+  const banner = document.getElementById('plan-banner');
+  const end = state.me?.organization?.plan_expires_at;
+  if (!end || !state.me.isAdmin || state.me.isSuperAdmin) {
+    banner.hidden = true;
+    return;
+  }
+  const d = daysUntil(end);
+  banner.hidden = d > 7;
+  if (d > 7) return;
+  banner.textContent =
+    d === 0
+      ? `Tu plan vence hoy (${fmtPlanDate(end)}). Renuévalo para no perder el acceso.`
+      : `Tu plan vence en ${d} ${d === 1 ? 'día' : 'días'} (${fmtPlanDate(end)}). Renuévalo para no perder el acceso.`;
+}
+
 // ── Límites del plan por empresa ─────────────────────────────────────────────
 
 const fmtBytes = (b) => (b >= 1073741824 ? `${(b / 1073741824).toFixed(1)} GB` : `${Math.round(b / 1048576)} MB`);
@@ -2965,6 +2999,7 @@ function openOrgLimits(org) {
   document.getElementById('org-limits-title').textContent = `Límites del plan · ${org.name}`;
   for (const key of ['max_channels', 'max_agents', 'max_ai_messages']) orgLimitsForm.elements[key].value = org[key];
   orgLimitsForm.elements.max_storage_mb.value = org.max_storage_mb;
+  orgLimitsForm.elements.plan_expires_at.value = org.plan_expires_at ?? '';
   orgLimitsStatus.textContent = '';
   orgLimitsOverlay.hidden = false;
 }
@@ -2982,6 +3017,7 @@ orgLimitsForm.addEventListener('submit', async (ev) => {
     }
     limits[key] = n;
   }
+  limits.plan_expires_at = orgLimitsForm.elements.plan_expires_at.value || null;
   orgLimitsStatus.textContent = 'Guardando…';
   orgLimitsStatus.className = 'settings-status';
   try {
@@ -2994,9 +3030,15 @@ orgLimitsForm.addEventListener('submit', async (ev) => {
   orgLimitsOverlay.hidden = true;
   await loadOrganizations();
   if (org.id === state.me.organization.id) {
-    Object.assign(state.me.organization, { max_channels: limits.max_channels, max_agents: limits.max_agents });
+    Object.assign(state.me.organization, { max_channels: limits.max_channels, max_agents: limits.max_agents, plan_expires_at: limits.plan_expires_at });
     renderChannelLimit();
   }
+});
+// "+30 días": renueva desde la fecha actual de vencimiento o desde hoy, lo que sea más tarde.
+document.getElementById('org-limits-renew').addEventListener('click', () => {
+  const field = orgLimitsForm.elements.plan_expires_at;
+  const base = field.value && field.value > limaToday() ? field.value : limaToday();
+  field.value = addDays(base, 30);
 });
 document.getElementById('org-limits-close').addEventListener('click', () => (orgLimitsOverlay.hidden = true));
 orgLimitsOverlay.addEventListener('click', (ev) => {
@@ -5109,7 +5151,7 @@ async function loadOrganizations() {
     const json = await callAdminUsers('list_organizations');
     state.organizations = json.organizations ?? [];
   } catch (err) {
-    orgsTbody.innerHTML = `<tr class="empty-row"><td colspan="7">Error cargando empresas: ${escapeHtml(err.message)}</td></tr>`;
+    orgsTbody.innerHTML = `<tr class="empty-row"><td colspan="8">Error cargando empresas: ${escapeHtml(err.message)}</td></tr>`;
     return;
   }
   renderOrgsTable();
@@ -5117,7 +5159,7 @@ async function loadOrganizations() {
 
 function renderOrgsTable() {
   if (!state.organizations.length) {
-    orgsTbody.innerHTML = `<tr class="empty-row"><td colspan="7">No hay empresas todavía.</td></tr>`;
+    orgsTbody.innerHTML = `<tr class="empty-row"><td colspan="8">No hay empresas todavía.</td></tr>`;
     return;
   }
   orgsTbody.innerHTML = state.organizations
@@ -5126,7 +5168,7 @@ function renderOrgsTable() {
       const expanded = state.expandedOrgIds.has(o.id);
       const users = state.profiles.filter((p) => p.organization_id === o.id);
       const usersRow = expanded
-        ? `<tr class="org-users-row"><td colspan="7"><div class="org-users">${
+        ? `<tr class="org-users-row"><td colspan="8"><div class="org-users">${
             users
               .map(
                 (p) => `
@@ -5144,6 +5186,7 @@ function renderOrgsTable() {
           <td><strong>${escapeHtml(o.name)}</strong>${isMine ? ' <span class="role-badge role-badge-info">Tu empresa</span>' : ''}</td>
           <td>${o.channels_count} / ${o.max_channels}</td>
           <td>${o.agents_count ?? 0} / ${o.max_agents}</td>
+          <td>${orgPlanCell(o)}</td>
           <td>${orgUsageCell(o)}</td>
           <td>${(o.admins ?? []).map((a) => escapeHtml(a.email)).join('<br>') || '—'}</td>
           <td>${o.is_active ? '<span class="role-badge role-badge-ok">Activa</span>' : '<span class="role-badge role-badge-off">Desactivada</span>'}</td>
@@ -5214,6 +5257,7 @@ orgForm.addEventListener('submit', async (ev) => {
     max_agents: Number.parseInt(String(fd.get('max_agents') ?? '5'), 10),
     max_ai_messages: Number.parseInt(String(fd.get('max_ai_messages') ?? '1000'), 10),
     max_storage_mb: Number.parseInt(String(fd.get('max_storage_mb') ?? '500'), 10),
+    plan_expires_at: fd.get('plan_expires_at') || null,
     admin: {
       email: String(fd.get('admin_email') ?? '').trim().toLowerCase(),
       password: String(fd.get('admin_password') ?? ''),
@@ -5823,7 +5867,7 @@ loginForm.addEventListener('submit', async (ev) => {
 async function bootstrapSession(session) {
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('*, organization:organizations(id, name, is_active, max_channels, max_agents), agent:agents(*, role:roles(id, name, permissions))')
+    .select('*, organization:organizations(id, name, is_active, max_channels, max_agents, plan_expires_at), agent:agents(*, role:roles(id, name, permissions))')
     .eq('id', session.user.id)
     .maybeSingle();
 
@@ -5837,6 +5881,11 @@ async function bootstrapSession(session) {
   }
   if (!profile.is_active || !profile.organization?.is_active) {
     showBlocked('Acceso deshabilitado', profile.is_active ? 'Tu empresa está desactivada.' : 'Tu usuario fue desactivado. Contacta al administrador de tu empresa.');
+    return;
+  }
+  const planEnd = profile.organization?.plan_expires_at;
+  if (planEnd && !profile.is_super_admin && daysUntil(planEnd) < 0) {
+    showBlocked('Plan vencido', `El plan de tu empresa venció el ${fmtPlanDate(planEnd)}. Contacta al administrador de la plataforma para renovarlo.`);
     return;
   }
   const today = new Date().toISOString().slice(0, 10);
@@ -5873,6 +5922,7 @@ async function bootstrapSession(session) {
 
   applyPermissionGating();
   renderAccountChip();
+  renderPlanBanner();
   showScreen('app');
   await startApp();
 }
