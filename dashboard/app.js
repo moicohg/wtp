@@ -709,6 +709,45 @@ function syncSidenavActive() {
   });
 }
 
+// ── Secciones por empresa ────────────────────────────────────────────────────
+// Módulos opcionales que el dueño de la plataforma habilita al dar acceso a una empresa.
+// Canales y Configuración siempre están. Espejo de supabase/functions/_shared/sections.ts.
+const PLAN_SECTIONS = [
+  { key: 'dashboard', label: 'Dashboard', desc: 'KPIs de leads, ventas y embudo' },
+  { key: 'agenda', label: 'Agenda', desc: 'Cola priorizada y citas detectadas por la IA' },
+  { key: 'bandeja-global', label: 'Bandeja global', desc: 'Todos los chats de la empresa en un solo lugar' },
+  { key: 'leads', label: 'Leads', desc: 'Tabla de prospectos por canal' },
+  { key: 'productos', label: 'Productos', desc: 'Catálogo con precios y autocompletado por IA' },
+  { key: 'catalogo-ia', label: 'Catálogo IA', desc: 'Archivos que la IA envía a los clientes' },
+  { key: 'automatizacion', label: 'Automatización', desc: 'Cadencias de mensajes' },
+  { key: 'disponibilidad', label: 'Disponibilidad', desc: 'Estado del equipo y alertas' },
+];
+const PLAN_SECTION_KEYS = PLAN_SECTIONS.map((s) => s.key);
+
+// enabled_sections null = todas.
+function sectionEnabled(key) {
+  const enabled = state.me?.organization?.enabled_sections;
+  return !enabled || enabled.includes(key);
+}
+
+function renderSectionPicker(container, enabled) {
+  container.innerHTML = PLAN_SECTIONS.map(
+    (s) => `<label class="section-check"><input type="checkbox" value="${s.key}" ${!enabled || enabled.includes(s.key) ? 'checked' : ''} />
+      <span><b>${s.label}</b><small>${s.desc}</small></span></label>`
+  ).join('');
+}
+
+// Todas marcadas = null (todas, incluidas las futuras); si no, la lista elegida.
+function readSectionPicker(container) {
+  const chosen = [...container.querySelectorAll('input:checked')].map((i) => i.value);
+  return chosen.length === PLAN_SECTION_KEYS.length ? null : chosen;
+}
+
+const sectionsSummary = (o) => {
+  const n = o.enabled_sections ? o.enabled_sections.length : PLAN_SECTION_KEYS.length;
+  return `${n} de ${PLAN_SECTION_KEYS.length} secciones`;
+};
+
 // Permiso mínimo para entrar a cada sección (el servidor lo hace cumplir de
 // todos modos vía RLS; esto solo evita mostrar pantallas vacías).
 const SECTION_PERMS = {
@@ -729,12 +768,16 @@ function sectionAllowed(section) {
     const id = section.slice('vendor:'.length);
     return can('leads.view') && visibleVendors().some((v) => v.id === id);
   }
+  if (PLAN_SECTION_KEYS.includes(section) && !sectionEnabled(section)) return false;
   const perms = SECTION_PERMS[section];
   return !perms || perms.some(can);
 }
 
 function defaultSection() {
-  return ['canales-lista', 'bandeja-global', 'leads', 'dashboard', 'productos', 'automatizacion'].find(sectionAllowed) || 'disponibilidad';
+  return (
+    ['canales-lista', 'bandeja-global', 'leads', 'dashboard', 'productos', 'automatizacion'].find(sectionAllowed) ||
+    (sectionAllowed('disponibilidad') ? 'disponibilidad' : 'configuracion')
+  );
 }
 
 async function setSection(section) {
@@ -3061,6 +3104,7 @@ function openOrgLimits(org) {
   for (const key of ['max_channels', 'max_agents', 'max_ai_messages']) orgLimitsForm.elements[key].value = org[key];
   orgLimitsForm.elements.max_storage_mb.value = org.max_storage_mb;
   orgLimitsForm.elements.plan_expires_at.value = org.plan_expires_at ?? '';
+  renderSectionPicker(document.getElementById('org-limits-sections'), org.enabled_sections);
   orgLimitsStatus.textContent = '';
   orgLimitsOverlay.hidden = false;
 }
@@ -3079,6 +3123,7 @@ orgLimitsForm.addEventListener('submit', async (ev) => {
     limits[key] = n;
   }
   limits.plan_expires_at = orgLimitsForm.elements.plan_expires_at.value || null;
+  limits.enabled_sections = readSectionPicker(document.getElementById('org-limits-sections'));
   orgLimitsStatus.textContent = 'Guardando…';
   orgLimitsStatus.className = 'settings-status';
   try {
@@ -3091,7 +3136,7 @@ orgLimitsForm.addEventListener('submit', async (ev) => {
   orgLimitsOverlay.hidden = true;
   await loadOrganizations();
   if (org.id === state.me.organization.id) {
-    Object.assign(state.me.organization, { max_channels: limits.max_channels, max_agents: limits.max_agents, plan_expires_at: limits.plan_expires_at });
+    Object.assign(state.me.organization, { max_channels: limits.max_channels, max_agents: limits.max_agents, plan_expires_at: limits.plan_expires_at, enabled_sections: limits.enabled_sections });
     renderChannelLimit();
   }
 });
@@ -4961,12 +5006,25 @@ const agentAdminFields = document.getElementById('agent-admin-fields');
 const agentRoleSelect = document.getElementById('agent-role-select');
 const agentModalOrg = document.getElementById('agent-modal-org');
 
+const agentTypeChoice = document.getElementById('agent-type-choice');
+
 function syncAgentModalType() {
   const isAdmin = agentUserType.value === 'admin';
   agentVendedorFields.hidden = isAdmin;
   agentAdminFields.hidden = !isAdmin;
+  agentTypeChoice.querySelectorAll('[data-type]').forEach((b) => {
+    const on = b.dataset.type === agentUserType.value;
+    b.classList.toggle('is-active', on);
+    b.setAttribute('aria-checked', String(on));
+  });
 }
 agentUserType.addEventListener('change', syncAgentModalType);
+agentTypeChoice.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-type]');
+  if (!btn) return;
+  agentUserType.value = btn.dataset.type;
+  syncAgentModalType();
+});
 
 function openAgentModal(orgId = null) {
   state.agentModalOrgId = orgId;
@@ -5244,7 +5302,7 @@ function renderOrgsTable() {
         : '';
       return `
         <tr data-id="${o.id}">
-          <td><strong>${escapeHtml(o.name)}</strong>${isMine ? ' <span class="role-badge role-badge-info">Tu empresa</span>' : ''}</td>
+          <td><strong>${escapeHtml(o.name)}</strong>${isMine ? ' <span class="role-badge role-badge-info">Tu empresa</span>' : ''}<br><small class="muted">${sectionsSummary(o)}</small></td>
           <td>${o.channels_count} / ${o.max_channels}</td>
           <td>${o.agents_count ?? 0} / ${o.max_agents}</td>
           <td>${orgPlanCell(o)}</td>
@@ -5300,6 +5358,7 @@ orgsTbody.addEventListener('click', async (ev) => {
 
 document.getElementById('create-org-btn').addEventListener('click', () => {
   orgForm.reset();
+  renderSectionPicker(document.getElementById('org-sections'), null);
   orgStatus.textContent = '';
   orgStatus.className = 'settings-status';
   orgOverlay.hidden = false;
@@ -5319,6 +5378,7 @@ orgForm.addEventListener('submit', async (ev) => {
     max_ai_messages: Number.parseInt(String(fd.get('max_ai_messages') ?? '1000'), 10),
     max_storage_mb: Number.parseInt(String(fd.get('max_storage_mb') ?? '500'), 10),
     plan_expires_at: fd.get('plan_expires_at') || null,
+    enabled_sections: readSectionPicker(document.getElementById('org-sections')),
     admin: {
       email: String(fd.get('admin_email') ?? '').trim().toLowerCase(),
       password: String(fd.get('admin_password') ?? ''),
@@ -5822,6 +5882,10 @@ function applyPermissionGating() {
   document.querySelectorAll('[data-perm-any]').forEach((el) => {
     el.hidden = !el.dataset.permAny.split(/\s+/).some(can);
   });
+  // Secciones no contratadas por la empresa.
+  document.querySelectorAll('#sidenav [data-section]').forEach((el) => {
+    if (PLAN_SECTION_KEYS.includes(el.dataset.section) && !sectionEnabled(el.dataset.section)) el.hidden = true;
+  });
   document.getElementById('nav-empresas').hidden = !state.me?.isSuperAdmin;
   const canalesSection = document.getElementById('sidenav-canales-section');
   canalesSection.hidden = !canalesSection.querySelector('.sidenav-item:not([hidden])');
@@ -5928,7 +5992,7 @@ loginForm.addEventListener('submit', async (ev) => {
 async function bootstrapSession(session) {
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('*, organization:organizations(id, name, is_active, max_channels, max_agents, plan_expires_at), agent:agents(*, role:roles(id, name, permissions))')
+    .select('*, organization:organizations(id, name, is_active, max_channels, max_agents, plan_expires_at, enabled_sections), agent:agents(*, role:roles(id, name, permissions))')
     .eq('id', session.user.id)
     .maybeSingle();
 
@@ -6042,7 +6106,7 @@ document.addEventListener('keydown', (ev) => {
 async function startApp() {
   await Promise.all([loadAgents(), loadVendors(), loadCustomFields(), loadRoles()]);
   setSection(defaultSection());
-  if (can('agenda.view_priority_queue')) loadAgenda().catch(() => {});
+  if (can('agenda.view_priority_queue') && sectionEnabled('agenda')) loadAgenda().catch(() => {});
   if (state.vendorId) {
     await loadProspects();
     subscribeVendor(state.vendorId);

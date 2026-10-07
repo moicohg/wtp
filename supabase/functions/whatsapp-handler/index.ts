@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { detectAppointment } from '../_shared/appointments.ts';
-import { aiAllowed, getOrgUsage, storageAllowed } from '../_shared/limits.ts';
+import { agendaEnabled, aiAllowed, getOrgUsage, storageAllowed } from '../_shared/limits.ts';
 import { understandMedia } from '../_shared/media-ai.ts';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -587,7 +587,7 @@ Deno.serve(async (req: Request) => {
 
     // 7b. ¿Quedó una cita? No bloquea la respuesta ya enviada.
     try {
-      await detectAppointment(supabase, vendor, prospect, history, aiText, aiReply.reply);
+      if (agendaEnabled(usage)) await detectAppointment(supabase, vendor, prospect, history, aiText, aiReply.reply);
     } catch (e) {
       console.warn('[agenda] no se pudo detectar cita:', e);
     }

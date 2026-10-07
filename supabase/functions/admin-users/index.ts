@@ -1,3 +1,4 @@
+import { ALL_SECTION_KEYS } from '../_shared/sections.ts';
 import { admin, getCaller, handleError, HttpError, json, preflight, requirePermission, requireSuperAdmin, type Caller } from '../_shared/auth.ts';
 import { normalizeE164, vendorLoginEmail } from '../_shared/phone.ts';
 
@@ -100,6 +101,16 @@ function parsePlanDate(value: unknown): string | null | undefined {
   return value;
 }
 
+// Secciones habilitadas: lista de claves válidas, o null/undefined = todas. undefined = no tocar.
+function parseSections(value: unknown): string[] | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (!Array.isArray(value) || value.some((k) => typeof k !== 'string' || !(ALL_SECTION_KEYS as readonly string[]).includes(k))) {
+    throw new HttpError(400, 'enabled_sections debe ser una lista de secciones válidas');
+  }
+  return [...new Set(value as string[])];
+}
+
 async function createOrganization(caller: Caller, body: Body) {
   requireSuperAdmin(caller);
   const name = requireStr(body, 'name', 'el nombre de la empresa');
@@ -112,6 +123,7 @@ async function createOrganization(caller: Caller, body: Body) {
   const maxStorageMb = Number.isInteger(body.max_storage_mb) ? (body.max_storage_mb as number) : 500;
   if (maxStorageMb < 0) throw new HttpError(400, 'max_storage_mb no puede ser negativo');
   const planExpiresAt = parsePlanDate(body.plan_expires_at) ?? null;
+  const enabledSections = parseSections(body.enabled_sections) ?? null;
   const adminBody = (body.admin ?? {}) as Body;
   const email = requireStr(adminBody, 'email', 'el correo del administrador').toLowerCase();
   const password = requirePassword(adminBody);
@@ -119,7 +131,7 @@ async function createOrganization(caller: Caller, body: Body) {
 
   const { data: org, error: orgError } = await admin
     .from('organizations')
-    .insert({ name, max_channels: maxChannels, max_agents: maxAgents, max_ai_messages: maxAiMessages, max_storage_mb: maxStorageMb, plan_expires_at: planExpiresAt })
+    .insert({ name, max_channels: maxChannels, max_agents: maxAgents, max_ai_messages: maxAiMessages, max_storage_mb: maxStorageMb, plan_expires_at: planExpiresAt, enabled_sections: enabledSections })
     .select('*')
     .single();
   if (orgError || !org) throw new HttpError(500, orgError?.message ?? 'No se pudo crear la empresa');
@@ -182,7 +194,7 @@ async function getUsage(caller: Caller) {
   if (!caller.isAdmin) throw new HttpError(403, 'Solo el administrador de la empresa puede ver el consumo del plan');
   const orgId = caller.organizationId;
   const [org, channels, agents, usage] = await Promise.all([
-    admin.from('organizations').select('max_channels, max_agents, plan_expires_at').eq('id', orgId).single(),
+    admin.from('organizations').select('max_channels, max_agents, plan_expires_at, enabled_sections').eq('id', orgId).single(),
     admin.from('vendors').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
     admin.from('agents').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
     admin.rpc('org_usage', { p_org: orgId }),
@@ -192,6 +204,7 @@ async function getUsage(caller: Caller) {
     channels: { used: channels.count ?? 0, max: org.data.max_channels },
     agents: { used: agents.count ?? 0, max: org.data.max_agents },
     plan_expires_at: org.data.plan_expires_at,
+    enabled_sections: org.data.enabled_sections,
     ...(usage.data ?? {}),
   });
 }
@@ -218,8 +231,10 @@ async function setOrganizationLimits(caller: Caller, body: Body) {
     patch[key] = value as number;
   }
   const planDate = parsePlanDate(body.plan_expires_at);
-  const fullPatch: Record<string, number | string | null> = { ...patch };
+  const fullPatch: Record<string, number | string | string[] | null> = { ...patch };
   if (planDate !== undefined) fullPatch.plan_expires_at = planDate;
+  const sections = parseSections(body.enabled_sections);
+  if (sections !== undefined) fullPatch.enabled_sections = sections;
   if (!Object.keys(fullPatch).length) throw new HttpError(400, 'Nada que actualizar');
   const { error } = await admin.from('organizations').update(fullPatch).eq('id', id);
   if (error) throw new HttpError(500, error.message);

@@ -3,7 +3,7 @@
 // dashboard. Usa OpenAI (independiente de las API keys por vendor, que son
 // para los bots de WhatsApp) — requiere el secret OPENAI_API_KEY.
 
-import { getCaller, handleError, json, preflight, requirePermission } from '../_shared/auth.ts';
+import { getCaller, handleError, json, preflight, requirePermission, requireSection } from '../_shared/auth.ts';
 
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 const OPENAI_MODEL = 'gpt-4o-mini';
@@ -23,7 +23,9 @@ Deno.serve(async (req: Request) => {
   // Solo usuarios con sesión y permiso: evita gastar la clave de OpenAI con
   // la sola clave publicable.
   try {
-    requirePermission(await getCaller(req), 'config.products');
+    const caller = await getCaller(req);
+    requirePermission(caller, 'config.products');
+    requireSection(caller, 'productos');
   } catch (err) {
     return handleError(err);
   }

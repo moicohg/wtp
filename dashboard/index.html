@@ -1075,13 +1075,23 @@
       </div>
       <form id="agent-form" class="settings-form">
         <p class="muted" id="agent-modal-org" style="margin-top:-8px;" hidden></p>
-        <label>
-          Tipo de usuario
-          <select name="user_type" id="agent-user-type">
-            <option value="vendedor">Vendedor — entra con su número de WhatsApp</option>
-            <option value="admin">Administrador de la empresa — entra con correo</option>
+        <div class="field-block">
+          <span class="field-title">¿Qué tipo de usuario quieres crear?</span>
+          <div class="seg-choice" id="agent-type-choice" role="radiogroup" aria-label="Tipo de usuario">
+            <button type="button" class="seg-option is-active" role="radio" aria-checked="true" data-type="vendedor">
+              <span class="seg-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></svg></span>
+              <span class="seg-text"><b>Vendedor</b><small>Entra con su número de WhatsApp</small></span>
+            </button>
+            <button type="button" class="seg-option" role="radio" aria-checked="false" data-type="admin">
+              <span class="seg-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></span>
+              <span class="seg-text"><b>Administrador</b><small>Entra con correo y gestiona la empresa</small></span>
+            </button>
+          </div>
+          <select name="user_type" id="agent-user-type" hidden>
+            <option value="vendedor">Vendedor</option>
+            <option value="admin">Administrador</option>
           </select>
-        </label>
+        </div>
         <label>
           Nombres
           <input name="first_name" type="text" placeholder="Nombres" required />
@@ -1164,6 +1174,10 @@
             <button type="button" class="btn" id="org-limits-renew">+30 días</button>
           </div>
         </label>
+        <div class="field-block">
+          <span class="field-title">Secciones del CRM <span class="hint">(Canales y Configuración siempre están)</span></span>
+          <div class="sections-grid" id="org-limits-sections"></div>
+        </div>
         <div class="settings-actions">
           <span id="org-limits-status" class="settings-status"></span>
           <button type="submit" class="btn btn-primary">Guardar límites</button>
@@ -1204,6 +1218,10 @@
           Plan vence el <span class="hint">(último día de acceso; vacío = sin vencimiento)</span>
           <input name="plan_expires_at" type="date" />
         </label>
+        <div class="field-block">
+          <span class="field-title">Secciones del CRM <span class="hint">(lo que esta empresa podrá usar; Canales y Configuración siempre están)</span></span>
+          <div class="sections-grid" id="org-sections"></div>
+        </div>
         <p class="hint">Primer administrador de la empresa: entra con correo y contraseña y administra a sus vendedores.</p>
         <label>
           Nombre del administrador

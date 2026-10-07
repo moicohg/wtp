@@ -6,6 +6,7 @@ export interface OrgUsage {
   storage_bytes: number;
   storage_max_bytes: number;
   plan_active: boolean;
+  agenda_enabled: boolean;
 }
 
 export async function getOrgUsage(supabase: SupabaseClient, organizationId: string): Promise<OrgUsage | null> {
@@ -20,4 +21,6 @@ export async function getOrgUsage(supabase: SupabaseClient, organizationId: stri
 // Si no se puede leer el consumo se deja pasar: es mejor responder de más que dejar al cliente sin bot por un fallo.
 // El bot también se detiene si la empresa está desactivada o su plan venció.
 export const aiAllowed = (u: OrgUsage | null) => !u || (u.plan_active !== false && u.ai_used < u.ai_max);
+// La detección de citas solo corre si la empresa tiene la Agenda contratada.
+export const agendaEnabled = (u: OrgUsage | null) => !u || u.agenda_enabled !== false;
 export const storageAllowed = (u: OrgUsage | null) => !u || u.storage_bytes < u.storage_max_bytes;

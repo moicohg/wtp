@@ -56,7 +56,7 @@ export interface CallerProfile {
   full_name: string | null;
   email: string;
   phone: string | null;
-  organization: { id: string; name: string; is_active: boolean; max_channels: number; plan_expires_at: string | null } | null;
+  organization: { id: string; name: string; is_active: boolean; max_channels: number; plan_expires_at: string | null; enabled_sections: string[] | null } | null;
   agent: {
     id: string;
     name: string;
@@ -92,7 +92,7 @@ export async function getCaller(req: Request): Promise<Caller> {
     .from('profiles')
     .select(
       'id, organization_id, user_type, is_super_admin, is_active, agent_id, full_name, email, phone, ' +
-        'organization:organizations(id, name, is_active, max_channels, plan_expires_at), ' +
+        'organization:organizations(id, name, is_active, max_channels, plan_expires_at, enabled_sections), ' +
         'agent:agents(id, name, access_expires_at, role_id, role:roles(id, name, permissions))'
     )
     .eq('id', user.id)
@@ -132,6 +132,14 @@ export async function getCaller(req: Request): Promise<Caller> {
 
 export function requirePermission(caller: Caller, perm: string): void {
   if (!caller.can(perm)) throw new HttpError(403, `No tienes el permiso "${perm}"`);
+}
+
+// El módulo debe estar contratado por la empresa (organizations.enabled_sections; null = todos).
+export function requireSection(caller: Caller, section: string): void {
+  const enabled = caller.profile.organization?.enabled_sections;
+  if (enabled && !enabled.includes(section)) {
+    throw new HttpError(403, 'Esta sección no está incluida en el plan de tu empresa');
+  }
 }
 
 export function requireSuperAdmin(caller: Caller): void {

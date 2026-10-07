@@ -3,7 +3,7 @@
 // Lo llama el botón "✨ Analizar prompt" de la sección Catálogo IA. Usa
 // OpenAI (mismo secret OPENAI_API_KEY que product-autocomplete).
 
-import { getCaller, handleError, json, preflight, requirePermission } from '../_shared/auth.ts';
+import { getCaller, handleError, json, preflight, requirePermission, requireSection } from '../_shared/auth.ts';
 
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 const OPENAI_MODEL = 'gpt-4o-mini';
@@ -15,7 +15,9 @@ Deno.serve(async (req: Request) => {
   // Solo usuarios con sesión y permiso: evita gastar la clave de OpenAI con
   // la sola clave publicable.
   try {
-    requirePermission(await getCaller(req), 'config.products');
+    const caller = await getCaller(req);
+    requirePermission(caller, 'config.products');
+    requireSection(caller, 'catalogo-ia');
   } catch (err) {
     return handleError(err);
   }
