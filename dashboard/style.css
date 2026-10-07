@@ -151,12 +151,14 @@ body {
   gap: 10px;
   padding: 9px 12px;
 }
-.sidenav-item .nav-icon {
-  font-size: 15px;
+.sidenav-item .nav-icon, .sidebar-footer-item .nav-icon {
+  display: inline-flex;
   width: 18px;
-  text-align: center;
+  height: 18px;
   flex-shrink: 0;
 }
+/* Iconos de línea sin color: heredan el color del texto (currentColor). */
+.nav-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .sidenav-item:hover, .sidenav-subitem:hover {
   background: var(--surface-hover);
   color: var(--text);
@@ -2411,3 +2413,5 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 .ag-row > * { min-width: 0; }
 .ag-lead-cell > span:last-child { min-width: 0; overflow: hidden; }
 .ag-lead-cell small { max-width: none; }
+
+.sidebar-footer-item { display: flex; align-items: center; gap: 10px; }
