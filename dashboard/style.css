@@ -2270,3 +2270,5 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 .qr-box img { width: 248px; height: 248px; }
 .qr-steps { margin: 0; padding-left: 18px; text-align: left; }
 .settings-form[hidden], .qr-panel[hidden] { display: none; }
+.ai-test { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ai-test .settings-status { flex: 1; min-width: 200px; }

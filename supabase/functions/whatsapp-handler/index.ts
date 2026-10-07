@@ -167,6 +167,7 @@ async function callAI(vendor: Vendor, history: Message[], messageText: string, p
       }),
     });
     const data = await response.json();
+    if (!response.ok) console.error('[ia:anthropic] HTTP', response.status, JSON.stringify(data?.error ?? data).slice(0, 300));
     return parseAIResponse(data.content?.[0]?.text ?? '');
   }
 
@@ -188,6 +189,7 @@ async function callAI(vendor: Vendor, history: Message[], messageText: string, p
       }),
     });
     const data = await response.json();
+    if (!response.ok) console.error('[ia:openai] HTTP', response.status, JSON.stringify(data?.error ?? data).slice(0, 300));
     return parseAIResponse(data.choices?.[0]?.message?.content ?? '');
   }
 
@@ -211,6 +213,7 @@ async function callAI(vendor: Vendor, history: Message[], messageText: string, p
       }),
     });
     const data = await response.json();
+    if (!response.ok) console.error('[ia:google] HTTP', response.status, JSON.stringify(data?.error ?? data).slice(0, 300));
     return parseAIResponse(data.candidates?.[0]?.content?.parts?.[0]?.text ?? '');
   }
 

@@ -4187,12 +4187,50 @@ function openSettings(vendorId) {
   settingsForm.elements['ai_provider'].value = v.ai_provider;
   settingsForm.elements['ai_model'].value = v.ai_model ?? '';
   settingsForm.elements['ai_api_key'].value = '';
+  aiTestStatus.textContent = '';
   settingsForm.elements['keywords'].value = (v.keywords ?? []).join(', ');
   settingsForm.elements['system_prompt'].value = v.system_prompt ?? '';
   settingsStatus.textContent = '';
   settingsStatus.className = 'settings-status';
   settingsOverlay.hidden = false;
 }
+
+// Prueba la clave de IA con el proveedor y modelo del formulario (o la guardada si no se escribió otra).
+const aiTestBtn = document.getElementById('f-ai-test-btn');
+const aiTestStatus = document.getElementById('f-ai-test-status');
+
+async function testAiConnection() {
+  const fd = new FormData(settingsForm);
+  const payload = {
+    action: 'test',
+    vendor_id: state.configVendorId,
+    ai_provider: fd.get('ai_provider'),
+    ai_model: fd.get('ai_model') || undefined,
+  };
+  const apiKey = fd.get('ai_api_key');
+  if (apiKey) payload.ai_api_key = apiKey;
+
+  aiTestBtn.disabled = true;
+  aiTestStatus.textContent = 'Probando…';
+  aiTestStatus.className = 'settings-status';
+  try {
+    const resp = await fetch(`${FUNCTIONS_URL}/update-vendor-ai`, {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
+    aiTestStatus.textContent = `${json.ok ? '✓' : '✗'} ${json.message}`;
+    aiTestStatus.className = `settings-status ${json.ok ? 'ok' : 'err'}`;
+  } catch (err) {
+    aiTestStatus.textContent = `Error: ${err.message}`;
+    aiTestStatus.className = 'settings-status err';
+  } finally {
+    aiTestBtn.disabled = false;
+  }
+}
+aiTestBtn.addEventListener('click', testAiConnection);
 
 async function saveSettings(ev) {
   ev.preventDefault();
@@ -4213,12 +4251,6 @@ async function saveSettings(ev) {
   };
   const apiKey = fd.get('ai_api_key');
   if (apiKey) payload.ai_api_key = apiKey;
-  // update-vendor-ai exige ai_provider + ai_api_key juntos para tocar esos campos;
-  // si no se escribió una key nueva, no los mandamos y solo actualizamos el prompt.
-  if (!apiKey) {
-    delete payload.ai_provider;
-    delete payload.ai_model;
-  }
 
   settingsStatus.textContent = 'Guardando…';
   settingsStatus.className = 'settings-status';
