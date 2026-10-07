@@ -236,7 +236,7 @@ Al crear una empresa, un trigger siembra los roles "Administrador" (sistema) y "
 - **Super-admin (dueño de la plataforma)**: `kanbansuite@gmail.com`, admin de la empresa inicial "007". Ve la sección Empresas y puede administrar cualquier empresa.
 - **Admins de empresa**: entran con correo y contraseña.
 - **Vendedores**: entran con **teléfono** y contraseña. En Auth se crean con un correo sintético `<dígitos E.164>@vendedor.invalid` (misma lógica en `app.js` y `phone.ts`). No reciben correos.
-- Todas las altas, bajas, cambios de contraseña y de estado pasan por la Edge Function `admin-users`. El modal "Nuevo usuario" muestra la empresa y sus cupos (`Vendedores: 1 de 50`).
+- Todas las altas, bajas, cambios de contraseña y de estado pasan por la Edge Function `admin-users`. Cada usuario se puede renombrar con ✎ (Configuración y Empresas; `update_user`), útil para reconocer a qué empresa pertenece; sobre uno mismo solo se permite renombrar. El modal "Nuevo usuario" muestra la empresa y sus cupos (`Vendedores: 1 de 50`).
 - El acceso de un vendedor puede vencer en una fecha (`agents.access_expires_at`).
 
 ---

@@ -5171,10 +5171,54 @@ async function toggleUserActive(profile) {
   await refreshUsersViews();
 }
 
+// Cambiar el nombre con el que se ve a un usuario en las listas (por ejemplo, el de su empresa).
+const renameOverlay = document.getElementById('rename-overlay');
+const renameForm = document.getElementById('rename-form');
+const renameStatus = document.getElementById('rename-status');
+let renameTarget = null;
+
+function renameUser(profile) {
+  renameTarget = profile;
+  renameForm.elements.full_name.value = profile.full_name || '';
+  renameStatus.textContent = '';
+  renameStatus.className = 'settings-status';
+  renameOverlay.hidden = false;
+  renameForm.elements.full_name.focus();
+}
+
+renameForm.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const name = renameForm.elements.full_name.value.trim();
+  if (!name) return;
+  renameStatus.textContent = 'Guardando…';
+  renameStatus.className = 'settings-status';
+  try {
+    await callAdminUsers('update_user', { user_id: renameTarget.id, full_name: name });
+  } catch (err) {
+    renameStatus.textContent = `Error: ${err.message}`;
+    renameStatus.className = 'settings-status err';
+    return;
+  }
+  if (renameTarget.id === state.me.user.id) {
+    state.me.profile.full_name = name;
+    renderAccountChip();
+  }
+  renameOverlay.hidden = true;
+  await refreshUsersViews();
+});
+document.getElementById('rename-close').addEventListener('click', () => (renameOverlay.hidden = true));
+renameOverlay.addEventListener('click', (ev) => {
+  if (ev.target === renameOverlay) renameOverlay.hidden = true;
+});
+
 function userActionButtons(profile) {
   const isSelf = profile.id === state.me.user.id;
-  if (isSelf || (profile.is_super_admin && !state.me.isSuperAdmin)) return '';
+  if (profile.is_super_admin && !state.me.isSuperAdmin) return '';
+  const rename = `<button type="button" class="btn-icon js-user-rename" data-user-id="${profile.id}" title="Cambiar nombre" aria-label="Cambiar nombre">✎</button>`;
+  // Sobre uno mismo solo se permite renombrar (no desactivarse, borrarse ni cambiar la contraseña desde aquí).
+  if (isSelf) return rename;
   return `
+    ${rename}
     <button type="button" class="btn-icon js-user-reset" data-user-id="${profile.id}" title="Cambiar contraseña" aria-label="Cambiar contraseña">🔑</button>
     <button type="button" class="btn-icon js-user-toggle" data-user-id="${profile.id}" title="${profile.is_active ? 'Desactivar' : 'Activar'}" aria-label="${profile.is_active ? 'Desactivar' : 'Activar'}">${profile.is_active ? '⏸' : '▶️'}</button>
     <button type="button" class="btn-icon js-user-delete" data-user-id="${profile.id}" title="Eliminar" aria-label="Eliminar">🗑</button>
@@ -5182,11 +5226,12 @@ function userActionButtons(profile) {
 }
 
 function handleUserActionClick(ev) {
-  const btn = ev.target.closest('.js-user-reset, .js-user-toggle, .js-user-delete');
+  const btn = ev.target.closest('.js-user-rename, .js-user-reset, .js-user-toggle, .js-user-delete');
   if (!btn) return false;
   const profile = state.profiles.find((p) => p.id === btn.dataset.userId);
   if (!profile) return true;
-  if (btn.classList.contains('js-user-reset')) resetUserPassword(profile);
+  if (btn.classList.contains('js-user-rename')) renameUser(profile);
+  else if (btn.classList.contains('js-user-reset')) resetUserPassword(profile);
   else if (btn.classList.contains('js-user-toggle')) toggleUserActive(profile);
   else deleteUser(profile);
   return true;

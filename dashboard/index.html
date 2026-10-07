@@ -1093,7 +1093,7 @@
           </select>
         </div>
         <label>
-          Nombres
+          Nombres <span class="hint">(así lo verás en tu lista; puedes usar el nombre de la empresa. Después lo cambias con ✎)</span>
           <input name="first_name" type="text" placeholder="Nombres" required />
         </label>
         <label>
@@ -1138,6 +1138,27 @@
         <div class="settings-actions">
           <span id="agent-status" class="settings-status"></span>
           <button type="submit" class="btn btn-primary" id="agent-submit-btn">Crear usuario</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: renombrar usuario -->
+  <div id="rename-overlay" class="overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="drawer-header">
+        <h2>Cambiar nombre</h2>
+        <button class="btn-icon" id="rename-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="rename-form" class="settings-form">
+        <label>
+          Nombre del usuario
+          <input name="full_name" type="text" maxlength="80" placeholder="Ej. Inmobiliaria Los Andes — Admin" required />
+        </label>
+        <p class="hint">Solo cambia cómo lo ves en las listas. No cambia su correo ni su número de acceso.</p>
+        <div class="settings-actions">
+          <span id="rename-status" class="settings-status"></span>
+          <button type="submit" class="btn btn-primary">Guardar nombre</button>
         </div>
       </form>
     </div>
