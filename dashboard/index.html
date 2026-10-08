@@ -323,19 +323,27 @@
 
         <!-- Tab: Config -->
         <div class="avail-panel" id="avail-panel-config" hidden>
-          <div class="avail-config-card">
-            <div class="avail-config-card-row">
-              <div class="avail-config-card-icon">✨</div>
-              <div class="avail-config-card-text">
-                <strong>Asignación inteligente</strong>
-                <p class="muted">Los leads se asignan y reasignan solos, con ranking ponderado por prioridad, capacidad y rendimiento del vendedor.</p>
-              </div>
-              <span class="switch"><input type="checkbox" id="avail-smart-toggle" /><span class="switch-track"></span></span>
-            </div>
+          <h4 class="section-title">Cómo se reparten los leads</h4>
+          <div class="avail-mode-group" id="avail-mode-group">
+            <label class="avail-mode-option">
+              <input type="radio" name="avail-mode" value="propio" />
+              <span class="avail-mode-body">
+                <strong>👤 Cada asesor es responsable de los suyos</strong>
+                <span class="muted">Los leads quedan con el asesor del canal por el que escribieron y no se derivan a nadie más, aunque esté fuera de línea o tenga mensajes en cola. Cada uno se hace cargo de lo que le llega.</span>
+              </span>
+            </label>
+            <label class="avail-mode-option">
+              <input type="radio" name="avail-mode" value="equipo" />
+              <span class="avail-mode-body">
+                <strong>👥 Todo el equipo atiende a todos</strong>
+                <span class="muted">Cada lead nuevo se asigna al asesor en estado "Listo" con menos chats abiertos, según su prioridad. Si nadie está listo, se queda con el asesor del canal.</span>
+              </span>
+            </label>
           </div>
+          <p class="muted" id="avail-mode-status" style="margin-top:6px;"></p>
 
           <h4 class="section-title" style="margin-top:18px;">Prioridad de asignación</h4>
-          <p class="muted" style="margin-top:-8px;">Los vendedores con mayor prioridad reciben más leads cuando la asignación inteligente está activa. Rango 1 (bajo) a 10 (alto).</p>
+          <p class="muted" style="margin-top:-8px;">Con el modo "Todo el equipo atiende a todos", los vendedores con mayor prioridad reciben más leads. Rango 1 (bajo) a 10 (alto).</p>
           <div class="table-wrap">
             <table id="avail-priority-table">
               <thead><tr><th>Vendedor</th><th>Estado actual</th><th>Prioridad</th></tr></thead>
@@ -349,14 +357,14 @@
               <div class="avail-config-card-icon">🔔</div>
               <div class="avail-config-card-text">
                 <strong>Alerta de respuesta <span id="avail-alert-pill" class="status-pill">Inactiva</span></strong>
-                <p class="muted">Envía un WhatsApp desde el mismo canal del lead a los números que elijas: cuando un lead entra a una etapa seleccionada o cuando lleva demasiado tiempo sin respuesta.</p>
+                <p class="muted">Cuando un lead calificado lleva demasiado tiempo sin respuesta de una persona (el bot no cuenta), avisa por WhatsApp a su asesor y, si sigue sin atenderse, a los números que elijas.</p>
               </div>
               <span class="switch"><input type="checkbox" id="avail-alert-toggle" /><span class="switch-track"></span></span>
             </div>
             <p class="muted" id="avail-alert-hint">La alerta está desactivada. Podés configurarla y luego activarla con el interruptor de arriba.</p>
 
             <div class="field-group">
-              <span class="cf-type-field-label">Números que reciben las alertas</span>
+              <span class="cf-type-field-label">Números que reciben el aviso si el asesor no responde</span>
               <div class="avail-phone-row">
                 <input type="text" id="avail-phone-input" placeholder="51987654321" />
                 <button type="button" class="btn btn-ghost" id="avail-phone-add-btn">＋ Agregar</button>
@@ -377,7 +385,7 @@
             </div>
 
             <div class="field-group">
-              <span class="cf-type-field-label">Tiempo sin respuesta antes de avisar</span>
+              <span class="cf-type-field-label">Tiempo sin respuesta antes de avisar al asesor</span>
               <div class="avail-minutes-row" id="avail-minutes-chips">
                 <button type="button" class="chip" data-minutes="5">5 min</button>
                 <button type="button" class="chip" data-minutes="10">10 min</button>
@@ -387,7 +395,7 @@
                 <input type="number" id="avail-minutes-input" min="1" max="1440" value="15" />
                 <span class="muted">min</span>
               </div>
-              <p class="muted" style="margin:0;">Entre 1 y 1440 minutos. Por defecto 15 min.</p>
+              <p class="muted" style="margin:0;">Entre 1 y 1440 minutos. Por defecto 15 min. Si el asesor sigue sin responder, el aviso a los números de arriba sale al doble de este tiempo.</p>
             </div>
 
             <div class="field-group">

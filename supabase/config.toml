@@ -12,3 +12,7 @@ verify_jwt = true
 # Lo llama pg_cron (sin JWT) con el secreto x-cron-secret.
 [functions.purge-media]
 verify_jwt = false
+
+# Lo llama pg_cron cada minuto (sin JWT) con el secreto x-cron-secret.
+[functions.lead-alerts]
+verify_jwt = false

@@ -32,7 +32,8 @@ Repositorio: https://github.com/moicohg/wtp
                                      organizations · profiles · vendors · agents
                                      prospects · messages · appointments · roles …
                                               ▲                         ▲
-                                              │  Realtime + PostgREST   │ pg_cron (diario) ──▶ purge-media
+                                              │  Realtime + PostgREST   │ pg_cron ──▶ purge-media (diario)
+                                              ▲                         ▲  y lead-alerts (cada minuto)
                                               │  (RLS por empresa)
                         dashboard/ (Vercel) ──┤
                         login con Supabase Auth
@@ -51,7 +52,7 @@ Repositorio: https://github.com/moicohg/wtp
 wtp/
 ├── dashboard/                  Panel web (se sirve tal cual, sin build)
 │   ├── index.html              Todas las vistas, modales y la pantalla de login
-│   ├── app.js                  Lógica completa del panel (~6.600 líneas)
+│   ├── app.js                  Lógica completa del panel (~6.700 líneas)
 │   ├── style.css               Estilos
 │   └── privacidad.html · terminos.html · eliminar-datos.html   Páginas públicas que exige Meta
 ├── supabase/
@@ -63,6 +64,7 @@ wtp/
 │   │   │   ├── phone.ts         Login por teléfono (espejo de app.js)
 │   │   │   ├── limits.ts        Consumo del plan (org_usage) y reglas aiAllowed / storageAllowed
 │   │   │   ├── appointments.ts  Detección de citas con la IA del canal
+│   │   │   ├── burst.ts         Agrupar mensajes en ráfaga antes de que responda la IA
 │   │   │   ├── sections.ts      Secciones opcionales que se pueden habilitar por empresa (espejo de app.js)
 │   │   │   └── media-ai.ts      Transcribir notas de voz y describir imágenes
 │   │   ├── whatsapp-handler/    Webhook Evolution API → IA (texto, adjuntos, estado de la sesión)
@@ -73,9 +75,10 @@ wtp/
 │   │   ├── update-vendor-ai/    Proveedor/clave/modelo/prompt de un canal y prueba de la clave
 │   │   ├── meta-exchange/       Conectar un canal de Meta (OAuth o token manual)
 │   │   ├── purge-media/         Borrado diario de adjuntos viejos (lo llama pg_cron)
+│   │   ├── lead-alerts/         Avisos de lead calificado sin respuesta (lo llama pg_cron cada minuto)
 │   │   ├── product-autocomplete/    Generar catálogo de productos con IA
 │   │   └── catalog-analyze-prompt/  Detectar productos en el system prompt
-│   └── migrations/             Esquema completo (28 archivos), en orden cronológico
+│   └── migrations/             Esquema completo (30 archivos), en orden cronológico
 ├── .claude/skills/             deploy · qa · esquema (ver más abajo)
 ├── .env.example                Secrets de las Edge Functions
 └── vercel.json                 outputDirectory = dashboard
@@ -96,15 +99,17 @@ wtp/
 | Catálogo IA | Archivos que la IA puede mencionar, asignados a uno o más canales | `config.products` |
 | Leads | Tabla de prospectos por canal con KPIs y drawer de detalle | `leads.view` |
 | Automatización | Cadencias multi-día (plantilla, pasos, audiencia). Solo definición, sin motor | `messaging.manage_automations` |
-| Disponibilidad | Estado en tiempo real de cada vendedor, historial y config de asignación/alertas | todos |
+| Disponibilidad | Estado en tiempo real de cada vendedor, historial y config de reparto de leads y alertas (ver [Reparto de leads y alertas](#reparto-de-leads-y-alertas)) | todos |
 | Configuración | Usuarios de la empresa y Roles con permisos | `users.manage_users` / `users.manage_roles` |
 | Empresas | Crear empresas, fijar su plan (límites y vencimiento), activarlas y ver su consumo | solo super-admin |
 
 **Pantalla Canales**: tabla con canal, estado, IA y asesor; pestañas Todos / Conectados / Desconectados / IA inactiva; búsqueda y filtro por asesor. Al elegir una fila, el panel de la derecha muestra asesor asignado, prompt de la IA, palabras clave, integraciones y las acciones (configurar, ver conversaciones, eliminar). Abajo, "Carga por asesor" y la tarjeta "Uso del plan" (solo administradores). Pixel de Meta, Formularios e Importar aparecen como "Próximamente".
 
+**Interruptor de IA por canal**: en la lista de Canales, cada canal con clave tiene un interruptor que apaga el bot en **todos** sus chats (`vendors.ia_enabled`, por defecto encendido). Es independiente del interruptor de cada chat (`prospects.ia_enabled`): el bot responde solo si ambos están encendidos. Con el canal apagado los mensajes se guardan y los atiende el equipo; la clave y el prompt se conservan. Lo pueden cambiar quienes tengan `config.manage_channels` o `config.ai_settings`, y el filtro "IA inactiva" incluye los canales apagados.
+
 **Configurar un canal**: proveedor, modelo, API key, palabras clave y prompt. El botón **Probar conexión de IA** hace una llamada mínima al proveedor y avisa si la clave no coincide con el proveedor, es inválida, no tiene saldo o el modelo no existe.
 
-**Chat**: el panel "Info del cliente" permite editar etapa, perfil, etiquetas, estado de conversación, calificación por rúbrica (Necesidad / Inversión / Urgencia / Autoridad), campos personalizados y apagar la IA solo para ese chat. Las notas de voz muestran su transcripción (🎙) y las imágenes su descripción (🖼).
+**Chat**: el panel "Info del cliente" permite editar etapa, perfil, etiquetas, estado de conversación, calificación por rúbrica (Necesidad / Inversión / Urgencia / Autoridad), campos personalizados y apagar la IA solo para ese chat (el interruptor del canal apaga todos). Las notas de voz muestran su transcripción (🎙) y las imágenes su descripción (🖼).
 
 El topbar tiene un selector rápido para que el vendedor cambie su propio estado (listo, atendiendo, pausa, fuera de atención). El menú lateral usa iconos de línea sin color.
 
@@ -152,6 +157,28 @@ Pantalla **Agenda**. Todo sale de la base de la empresa (`prospect_inbox`, `pros
 Quedan fuera de la cola los leads `DESCARTADO`, los de etapa `venta`, los pospuestos y los atendidos; un mensaje nuevo del lead lo devuelve a la cola.
 
 **Detección de citas**: las instrucciones del bot son del vendedor y no incluyen citas, así que `_shared/appointments.ts` hace una segunda llamada, con la IA del mismo canal, solo cuando el mensaje del cliente suena a cita (visita, domingo, 5 pm…). Resuelve fechas relativas en hora de Lima y deja **una** cita `por_confirmar` por prospecto (si la IA la reajusta, se actualiza). Un humano decide. Aplica a canales QR y Meta.
+
+---
+
+## Reparto de leads y alertas
+
+**Agrupar mensajes en ráfaga**: un cliente suele escribir varios mensajes seguidos. Cada webhook guarda su mensaje y espera `BURST_WAIT_MS` (6 s por defecto); solo responde el handler del último mensaje, con todo el texto pendiente junto (`_shared/burst.ts`). En Meta, dentro de un mismo aviso solo espera el último mensaje de cada remitente. La respuesta de la IA tarda esos segundos de más.
+
+**Modo de reparto** (Disponibilidad › Config › "Cómo se reparten los leads", `availability_settings.smart_assignment_enabled`). Es una decisión de cada empresa:
+
+| Modo | Qué pasa con un lead nuevo |
+|---|---|
+| 👤 Cada asesor es responsable de los suyos (por defecto) | Queda con el asesor del canal por el que escribió. **Nunca se deriva**, aunque esté fuera de línea o con cola: cada uno se hace cargo de lo que le llega |
+| 👥 Todo el equipo atiende a todos | El trigger `assign_new_prospect` pone en `handled_by_agent_id` al asesor en estado `listo` con menos carga: chats abiertos (`activo`, etapa distinta de venta/perdido, no descartado) dividido entre su prioridad (1-10). Excluye accesos vencidos y usuarios inactivos. Si nadie está listo, se queda con el asesor del canal |
+
+**Solo el administrador de la empresa** (o el super-admin) puede cambiar el modo: el panel deshabilita las opciones para los demás y el trigger `guard_assignment_mode` lo impide también en la base, aunque el rol tenga `config.alerts`. Solo actúa al crear el lead; no reasigna leads existentes ni cuando un asesor cambia de estado. El lead asignado a otro aparece como "prestado" y el asesor del canal lo sigue viendo.
+
+**Alerta de lead sin respuesta** (misma pantalla, requiere el interruptor de alerta). `lead-alerts` corre cada minuto con pg_cron y usa `leads_waiting_for_reply()`: un lead `CALIFICADO` espera desde el primer mensaje del cliente posterior a la última respuesta **humana** (las del bot no cuentan). No se avisa si está pospuesto, "atendido" desde entonces, vendido/perdido o la empresa tiene el plan vencido.
+
+1. A los `alert_minutes`: WhatsApp al teléfono del asesor responsable.
+2. Al doble de ese tiempo (o de inmediato si el asesor no tiene teléfono): WhatsApp a los números de la empresa (`alert_phones`).
+
+Cada aviso se marca en `prospects.alerted_agent_for` / `alerted_owner_for` (desde cuándo espera), así que no se repite hasta que una persona responda y el lead vuelva a esperar. Se envía desde el canal QR del lead, o desde otro canal QR conectado de la empresa; sin ninguno no sale (Meta no permite texto libre fuera de las 24 h). Funciona igual en los dos modos de reparto.
 
 ---
 
@@ -253,6 +280,7 @@ Al crear una empresa, un trigger siembra los roles "Administrador" (sistema) y "
 | `update-vendor-ai` | Panel (config del bot) | sesión + `config.ai_settings` | Cambia proveedor, modelo, clave y prompt de un canal; acción `test` que prueba la clave |
 | `meta-exchange` | Panel (agregar canal Meta) | sesión + `config.manage_channels` | Intercambia el code de OAuth o acepta un token manual y crea el canal |
 | `purge-media` | pg_cron (`verify_jwt=false`) | cabecera `x-cron-secret` = `CRON_SECRET` | Borra los adjuntos con más de 90 días |
+| `lead-alerts` | pg_cron cada minuto (`verify_jwt=false`) | cabecera `x-cron-secret` = `CRON_SECRET` | Avisa por WhatsApp de los leads calificados sin respuesta humana (ver [Reparto de leads y alertas](#reparto-de-leads-y-alertas)) |
 | `product-autocomplete` | Panel (Productos) | sesión + `config.products` | Genera productos con OpenAI a partir de una descripción del negocio |
 | `catalog-analyze-prompt` | Panel (Catálogo IA) | sesión + `config.products` | Detecta con OpenAI qué productos menciona el system prompt del canal |
 
@@ -263,15 +291,16 @@ La identidad del que llama sale siempre del `access_token` del usuario (`getCall
 1. El webhook identifica el canal por `evolution_instance_id` o `meta_phone_number_id`.
 2. Busca o crea el prospecto por `(vendor_id, phone)` en `paso_0`.
 3. Consulta `org_usage`: si hay espacio baja el adjunto de Evolution y lo sube a `chat-media`; si no, guarda el mensaje con la nota "Adjunto no guardado".
-4. Si el bot va a responder (hay API key, `ia_enabled`, cupo y plan vigente):
+4. Si el bot va a responder (hay API key, IA encendida en el canal y en el chat, cupo y plan vigente):
    - una **nota de voz** se transcribe (OpenAI Whisper o Gemini; Anthropic no transcribe audio) y una **imagen** se describe con el modelo del canal. El texto queda en el chat (🎙 / 🖼) y es lo que lee la IA. Límites: audio 8 MB, imagen 6 MB.
 5. Guarda el mensaje del cliente. Sin texto que la IA pueda leer (audio sin transcribir, imagen sin descripción), termina: lo atiende una persona.
-6. Si no hay API key, el chat tiene `ia_enabled=false`, se agotó el cupo mensual o el plan venció, termina ahí (el mensaje queda guardado).
-7. Llama al proveedor de IA con el `system_prompt` del canal (o el prompt por defecto "Alia", agente inmobiliaria) y el historial.
-8. La IA devuelve JSON con la respuesta, datos extraídos, `score`, `label` y `conversation_step` (paso_0 → paso_1 → paso_2 → calificado / tibio / frio).
-9. Actualiza el prospecto, guarda la respuesta con `by_ai = true` y la envía por WhatsApp.
-10. Si el mensaje suena a cita, `detectAppointment` propone una cita por confirmar.
-11. Si el prospecto queda CALIFICADO, avisa por WhatsApp al teléfono del asesor del canal.
+6. Si no hay API key, el canal tiene la IA apagada, el chat tiene `ia_enabled=false`, se agotó el cupo mensual o el plan venció, termina ahí (el mensaje queda guardado).
+7. Espera `BURST_WAIT_MS`: si llegó otro mensaje del cliente, termina y deja que responda el último, con todo junto.
+8. Llama al proveedor de IA con el `system_prompt` del canal (o el prompt por defecto "Alia", agente inmobiliaria) y el historial.
+9. La IA devuelve JSON con la respuesta, datos extraídos, `score`, `label` y `conversation_step` (paso_0 → paso_1 → paso_2 → calificado / tibio / frio).
+10. Actualiza el prospecto, guarda la respuesta con `by_ai = true` y la envía por WhatsApp.
+11. Si el mensaje suena a cita, `detectAppointment` propone una cita por confirmar.
+12. Si el prospecto queda CALIFICADO, avisa por WhatsApp al teléfono del asesor del canal.
 
 ---
 
@@ -282,6 +311,7 @@ pg_cron está activo (la migración `20260925000000_limites_ia_archivos.sql` cre
 | Job | Cuándo | Qué hace |
 |---|---|---|
 | `purge-chat-media` | todos los días 08:00 UTC | `net.http_post` a `purge-media` con `x-cron-secret` (leído de Vault en cada ejecución) |
+| `lead-alerts` | cada minuto | Igual, hacia `lead-alerts` (migración `20260929000000_reparto_y_alertas.sql`) |
 
 El valor del secreto **no está en el repositorio**: se crea una vez con `select vault.create_secret('<valor>', 'cron_secret')` y el mismo valor va en el secret `CRON_SECRET` de las Edge Functions (`supabase secrets set CRON_SECRET=…`). Sin él, `purge-media` responde 401.
 
@@ -298,7 +328,8 @@ Secrets de las Edge Functions. Configurar con `supabase secrets set --env-file .
 | `META_APP_ID`, `META_APP_SECRET`, `META_VERIFY_TOKEN` | Canal Meta Cloud API |
 | `META_REGISTER_PIN` | PIN de 6 dígitos con el que `meta-exchange` registra el número al conectar con "Continuar con Facebook". Sin él se omite el registro |
 | `OPENAI_API_KEY` | `product-autocomplete` y `catalog-analyze-prompt` (clave de la plataforma; la IA de cada canal usa la suya) |
-| `CRON_SECRET` | Autentica a pg_cron ante `purge-media` (mismo valor que el secreto `cron_secret` de Vault) |
+| `BURST_WAIT_MS` | Opcional. Espera en milisegundos para agrupar mensajes en ráfaga (6000 por defecto; 0 la desactiva) |
+| `CRON_SECRET` | Autentica a pg_cron ante `purge-media` y `lead-alerts` (mismo valor que el secreto `cron_secret` de Vault) |
 
 El panel lleva `SUPABASE_URL` y la clave publicable hardcodeadas al inicio de [dashboard/app.js](dashboard/app.js). Ahí mismo van `META_APP_ID` y `META_CONFIG_ID` (públicos) para el botón "Continuar con Facebook".
 
@@ -357,7 +388,10 @@ supabase db push
 | `limits.ts` | `whatsapp-handler`, `meta-webhook` |
 | `appointments.ts` | `whatsapp-handler`, `meta-webhook` |
 | `media-ai.ts` | `whatsapp-handler` |
+| `burst.ts` | `whatsapp-handler`, `meta-webhook` |
 | `sections.ts` | `admin-users` |
+| `permissions.ts` | `auth.ts` (así que, si cambia, las mismas funciones que importan `auth.ts`) |
+| `phone.ts` | `admin-users` |
 
 ```bash
 supabase functions deploy whatsapp-handler
@@ -399,6 +433,7 @@ Construido y en producción:
 - Agenda inteligente: cola priorizada, citas detectadas por la IA y calendario.
 - Panel completo: chat, bandeja global, leads, productos, catálogo IA, disponibilidad, usuarios, roles, canales (lista + detalle) y empresas.
 - Multi-empresa con Auth, RLS y lockdown del rol `anon`.
+- Reparto de leads por empresa (cada asesor responsable o equipo), agrupación de mensajes en ráfaga y alerta de lead sin respuesta.
 - Plan por empresa: canales, vendedores, respuestas de IA, almacenamiento, vencimiento y borrado de adjuntos a 90 días.
 
 Pendiente o solo definido:
@@ -406,10 +441,9 @@ Pendiente o solo definido:
 - **Adjuntos en canales Meta**: `meta-webhook` solo procesa texto; falta descargar el media con el token de Meta (y así transcribir/describir).
 - **Audio en canales Anthropic**: Anthropic no transcribe; esas notas de voz quedan guardadas para una persona.
 - **Cobro automático**: un pago aprobado (Mercado Pago) podría mover `plan_expires_at` +30 días. Hoy se renueva a mano desde Empresas.
-- **Interruptor de IA por canal**: la IA se apaga por chat (`ia_enabled`) o quitando la clave; no hay un interruptor por canal.
 - **Pixel de Meta, Formularios e Importar** (Canales): botones marcados "Próximamente".
 - **Motor de automatizaciones**: se guarda la cadencia y la audiencia, pero no existe el proceso que inscribe leads y envía mensajes programados.
-- **Asignación inteligente y alertas de respuesta**: se guarda la configuración en `availability_settings`, pero no hay motor que reparta leads ni envíe la alerta por WhatsApp.
+- **Reasignación y alerta por cambio de etapa**: el reparto solo actúa al crear el lead (no reasigna si el asesor se desconecta) y la alerta "lead entró a la etapa X" (`alert_etapas`) se guarda pero no tiene motor; solo está implementada la alerta por falta de respuesta.
 - **Permisos sin UI que gatear**: `leads.create_contacts`, `messaging.send_broadcasts`, `messaging.view_broadcasts`, `messaging.manage_templates`, `config.migrate_channels`.
 - **Vincular un agente existente a un login**: `admin-users` acepta `agent_id`, pero el panel no ofrece el botón.
 - **Desactivar el registro público** en Supabase Auth ("Allow new users to sign up") para que solo `admin-users` cree cuentas.
@@ -417,6 +451,7 @@ Pendiente o solo definido:
 
 Sin verificar de punta a punta en producción:
 
+- **Reparto, ráfaga y alerta de lead sin respuesta**: la migración `20260929000000` se validó en la base real con rollback, pero falta aplicarla, desplegar `lead-alerts`, `whatsapp-handler` y `meta-webhook`, y probar con un lead real.
 - **WhatsApp de aviso de caída**: el envío no se pudo probar porque no había un segundo canal QR conectado. El banner y el registro de la caída sí están probados.
 - **Aviso de 7 días y pantalla "Plan vencido" con un usuario real**: la regla de la base está probada; falta una empresa cliente no super-admin para verlo en pantalla.
 - **Contador de respuestas de IA** (`by_ai`): se confirma con la primera respuesta real del bot tras el despliegue.

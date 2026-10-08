@@ -2440,6 +2440,7 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 .cn-row-head { border-top: 0; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; color: var(--text-dim); padding-top: 14px; padding-bottom: 10px; }
 .cn-row:not(.cn-row-head) { cursor: pointer; }
 .cn-row:not(.cn-row-head):hover { background: var(--surface-hover); }
+.cn-ia-cell { display: flex; align-items: center; }
 .cn-row.is-selected { background: var(--surface-hover); box-shadow: inset 3px 0 0 var(--brand); }
 .cn-row > * { min-width: 0; }
 .cn-channel { display: flex; gap: 12px; align-items: center; }
@@ -2619,3 +2620,13 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 @media (max-width: 560px) {
   .seg-choice, .sections-grid { grid-template-columns: 1fr; }
 }
+
+/* Disponibilidad › Config: modo de reparto de leads */
+.avail-mode-group { display: grid; gap: 10px; }
+.avail-mode-option {
+  display: flex; gap: 12px; align-items: flex-start; cursor: pointer;
+  padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+.avail-mode-option:has(input:checked) { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+.avail-mode-option input { margin-top: 3px; }
+.avail-mode-body { display: grid; gap: 4px; }

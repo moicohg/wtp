@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { detectAppointment } from '../_shared/appointments.ts';
+import { settleBurst, withoutPending } from '../_shared/burst.ts';
 import { agendaEnabled, aiAllowed, getOrgUsage } from '../_shared/limits.ts';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -333,6 +334,13 @@ Deno.serve(async (req: Request) => {
 
       if (!phoneNumberId || !messages.length) continue;
 
+      // El último mensaje de texto de cada remitente en este aviso es el que espera y responde.
+      const lastBySender = new Map<string, Record<string, unknown>>();
+      for (const m of messages) {
+        if (m.type === 'text' && String(((m.text as Record<string, unknown>)?.body as string) ?? '').trim()) {
+          lastBySender.set(m.from as string, m);
+        }
+      }
       for (const message of messages) {
         // Solo procesamos texto por ahora
         if (message.type !== 'text') continue;
@@ -374,14 +382,19 @@ Deno.serve(async (req: Request) => {
 
           // 4. Guardar mensaje del usuario ANTES de llamar a la IA
           // (así queda en DB aunque la IA falle)
-          await supabase.from('messages').insert([
-            { prospect_id: prospect.id, role: 'user', content: text },
-          ]);
+          const { data: saved } = await supabase
+            .from('messages')
+            .insert({ prospect_id: prospect.id, role: 'user', content: text })
+            .select('id')
+            .single();
+
+          // Varios mensajes en un mismo aviso de Meta: solo el último espera y responde.
+          if (message !== lastBySender.get(from)) continue;
 
           // Si el vendor no tiene api_key configurada, solo guardamos el mensaje
           // y no intentamos llamar a la IA (evita error y pérdida del mensaje)
-          if (!vendor.ai_api_key || !prospect.ia_enabled) {
-            console.warn('[vendor] sin ai_api_key o ia_enabled=false — mensaje guardado pero sin respuesta IA. vendor_id:', vendor.id);
+          if (!vendor.ai_api_key || !vendor.ia_enabled || !prospect.ia_enabled) {
+            console.warn('[vendor] sin ai_api_key, canal con IA apagada o ia_enabled=false — mensaje guardado pero sin respuesta IA. vendor_id:', vendor.id);
             continue;
           }
 
@@ -392,8 +405,14 @@ Deno.serve(async (req: Request) => {
             continue;
           }
 
-          // 5. Llamar a la IA
-          const aiReply = await callAI(vendor, history, text, prospect);
+          // 5. Si el cliente sigue escribiendo, responde solo el handler del último mensaje y con todo junto.
+          const earlier = saved ? await settleBurst(supabase, prospect.id, saved.id) : [];
+          if (earlier === null) continue;
+          const fullText = [...earlier, text].join('\n');
+          const priorHistory = saved ? withoutPending(history) : history;
+
+          // 5b. Llamar a la IA
+          const aiReply = await callAI(vendor, priorHistory, fullText, prospect);
 
           // 6. Guardar respuesta del asistente
           await supabase.from('messages').insert([
@@ -428,7 +447,7 @@ Deno.serve(async (req: Request) => {
 
           // ¿Quedó una cita? No bloquea la respuesta ya enviada.
           try {
-            if (agendaEnabled(usage)) await detectAppointment(supabase, vendor, prospect, history, text, aiReply.reply);
+            if (agendaEnabled(usage)) await detectAppointment(supabase, vendor, prospect, priorHistory, fullText, aiReply.reply);
           } catch (e) {
             console.warn('[agenda] no se pudo detectar cita:', e);
           }

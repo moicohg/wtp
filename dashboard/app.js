@@ -534,7 +534,8 @@ const availDetailTbody = document.getElementById('avail-detail-tbody');
 const availColaBanner = document.getElementById('avail-cola-banner');
 const availColaListEl = document.getElementById('avail-cola-list');
 
-const availSmartToggle = document.getElementById('avail-smart-toggle');
+const availModeRadios = document.querySelectorAll('input[name="avail-mode"]');
+const availModeStatus = document.getElementById('avail-mode-status');
 const availPriorityTbody = document.getElementById('avail-priority-tbody');
 const availAlertPill = document.getElementById('avail-alert-pill');
 const availAlertToggle = document.getElementById('avail-alert-toggle');
@@ -892,7 +893,7 @@ sidenavEl.addEventListener('click', (ev) => {
 // (y el lockdown revoca su lectura). ai_key_set dice si hay clave.
 const VENDOR_COLUMNS =
   'id, name, phone_number, channel_type, evolution_instance_id, meta_phone_number_id, meta_waba_id, meta_verified, evolution_connected, evolution_disconnected_at, ' +
-  'ai_provider, ai_model, ai_key_set, system_prompt, assigned_agent_id, keywords, organization_id, created_at, updated_at';
+  'ai_provider, ai_model, ai_key_set, ia_enabled, system_prompt, assigned_agent_id, keywords, organization_id, created_at, updated_at';
 
 async function loadVendors() {
   const { data, error } = await supabase.from('vendors').select(VENDOR_COLUMNS).order('created_at', { ascending: true });
@@ -2223,7 +2224,11 @@ async function loadAvailConfig() {
   state.availAlertPhones = [...(state.availSettings.alert_phones ?? [])];
   state.availAlertEtapas = [...(state.availSettings.alert_etapas ?? [])];
 
-  availSmartToggle.checked = state.availSettings.smart_assignment_enabled;
+  availModeRadios.forEach((r) => {
+    r.checked = (r.value === 'equipo') === Boolean(state.availSettings.smart_assignment_enabled);
+    r.disabled = !state.me.isAdmin;
+  });
+  availModeStatus.textContent = state.me.isAdmin ? '' : 'Solo el administrador de la empresa puede cambiar esta opción.';
   availAlertToggle.checked = state.availSettings.alert_enabled;
   updateAlertPillAndHint();
   renderAvailPhoneList();
@@ -2237,13 +2242,23 @@ async function loadAvailConfig() {
   availConfigStatus.className = 'settings-status';
 }
 
-availSmartToggle?.addEventListener('change', async () => {
-  const { error } = await supabase
-    .from('availability_settings')
-    .update({ smart_assignment_enabled: availSmartToggle.checked })
-    .eq('organization_id', state.me.organization.id);
-  if (error) alert(`Error al guardar: ${error.message}`);
-});
+availModeRadios.forEach((radio) =>
+  radio.addEventListener('change', async () => {
+    if (!radio.checked) return;
+    availModeStatus.textContent = 'Guardando…';
+    const { error } = await supabase
+      .from('availability_settings')
+      .update({ smart_assignment_enabled: radio.value === 'equipo' })
+      .eq('organization_id', state.me.organization.id);
+    if (error) {
+      availModeStatus.textContent = `Error al guardar: ${error.message}`;
+      loadAvailConfig();
+      return;
+    }
+    state.availSettings.smart_assignment_enabled = radio.value === 'equipo';
+    availModeStatus.textContent = 'Guardado ✓ Aplica a los leads que lleguen desde ahora.';
+  })
+);
 
 availConfigSaveBtn?.addEventListener('click', async () => {
   const minutes = Math.min(1440, Math.max(1, Number(availMinutesInput.value) || 15));
@@ -3201,6 +3216,8 @@ const cnEyebrowEl = document.getElementById('cn-eyebrow');
 const cnBadgeEl = document.getElementById('nav-canales-badge');
 
 const isVendorConnected = (v) => (v.channel_type === 'meta' ? Boolean(v.meta_verified) : Boolean(v.evolution_connected));
+// La IA responde en el canal si tiene clave y el interruptor del canal está encendido.
+const isVendorAiOn = (v) => Boolean(v.ai_key_set) && v.ia_enabled !== false;
 const vendorAgent = (v) => state.agents.find((a) => a.id === v.assigned_agent_id);
 
 function cnAvatar(name, id, small = false) {
@@ -3212,7 +3229,7 @@ function cnFiltered() {
   return state.vendors.filter((v) => {
     if (cnState.filter === 'conectados' && !isVendorConnected(v)) return false;
     if (cnState.filter === 'desconectados' && isVendorConnected(v)) return false;
-    if (cnState.filter === 'ia-inactiva' && v.ai_key_set) return false;
+    if (cnState.filter === 'ia-inactiva' && isVendorAiOn(v)) return false;
     if (cnState.agent === '__none' && v.assigned_agent_id) return false;
     if (cnState.agent && cnState.agent !== '__none' && v.assigned_agent_id !== cnState.agent) return false;
     if (q && !`${v.name} ${v.phone_number ?? ''}`.toLowerCase().includes(q)) return false;
@@ -3236,7 +3253,7 @@ function renderVendorCards() {
     ['todos', 'Todos', n],
     ['conectados', 'Conectados', count(isVendorConnected)],
     ['desconectados', 'Desconectados', count((v) => !isVendorConnected(v))],
-    ['ia-inactiva', 'IA inactiva', count((v) => !v.ai_key_set)],
+    ['ia-inactiva', 'IA inactiva', count((v) => !isVendorAiOn(v))],
   ];
   cnTabsEl.innerHTML = tabs
     .map(([k, l, c]) => `<button type="button" class="${cnState.filter === k ? 'is-active' : ''}" data-cn-filter="${k}">${l} <span>${c}</span></button>`)
@@ -3263,7 +3280,9 @@ function renderVendorCards() {
         return `<div class="cn-row ${v.id === cnState.selectedId ? 'is-selected' : ''}" data-id="${v.id}">
           <span class="cn-channel">${cnAvatar(v.name, v.id)}<span><b>${escapeHtml(v.name)}</b><small>${escapeHtml(v.phone_number ? agFormatPhone(v.phone_number) : '—')}</small></span></span>
           <span><span class="cn-pill ${connected ? 'is-on' : 'is-off'}">${connected ? 'Conectado' : 'Sin conectar'}</span></span>
-          <span><span class="cn-pill ${v.ai_key_set ? 'is-ia' : 'is-off'}">${v.ai_key_set ? 'IA activa' : 'Sin configurar'}</span></span>
+          <span class="cn-ia-cell">${v.ai_key_set
+            ? `<label class="switch" title="${v.ia_enabled !== false ? 'Apagar la IA en todos los chats de este canal' : 'Encender la IA en este canal'}"><input type="checkbox" data-cn-ia="${v.id}" ${v.ia_enabled !== false ? 'checked' : ''} ${can('config.manage_channels') || can('config.ai_settings') ? '' : 'disabled'} /><span class="switch-track"></span></label>`
+            : '<span class="cn-pill is-off">Sin configurar</span>'}</span>
           <span class="cn-advisor">${agent ? `${cnAvatar(agent.name, agent.id, true)}${escapeHtml(agent.name)}` : '<span class="muted">Sin asignar</span>'}</span>
           <span class="cn-chevron">›</span>
         </div>`;
@@ -3303,7 +3322,7 @@ function renderCanalDetail() {
     </div>
     <div class="cn-d-pills">
       <span class="cn-pill ${connected ? 'is-on' : 'is-off'}">${connected ? 'Conectado' : 'Sin conectar'}</span>
-      <span class="cn-pill ${v.ai_key_set ? 'is-ia' : 'is-off'}">${v.ai_key_set ? '⚡ IA respondiendo' : 'IA sin configurar'}</span>
+      <span class="cn-pill ${isVendorAiOn(v) ? 'is-ia' : 'is-off'}">${!v.ai_key_set ? 'IA sin configurar' : v.ia_enabled === false ? 'IA apagada en el canal' : '⚡ IA respondiendo'}</span>
       <span class="cn-pill is-type">${v.channel_type === 'meta' ? 'Meta oficial' : 'Conexión QR'}</span>
     </div>
 
@@ -3350,6 +3369,7 @@ viewCanales.addEventListener('click', async (ev) => {
     cnState.filter = filter.dataset.cnFilter;
     return renderVendorCards();
   }
+  if (ev.target.closest('.cn-ia-cell')) return; // el interruptor de IA no selecciona la fila
   const act = ev.target.closest('[data-cn-act]')?.dataset.cnAct;
   const id = cnState.selectedId;
   if (act === 'reconnect') return reconnectVendorQr(id);
@@ -3363,6 +3383,21 @@ viewCanales.addEventListener('click', async (ev) => {
     cnState.selectedId = row.dataset.id;
     renderVendorCards();
   }
+});
+cnTableEl.addEventListener('change', async (ev) => {
+  const input = ev.target.closest('input[data-cn-ia]');
+  if (!input) return;
+  const v = state.vendors.find((x) => x.id === input.dataset.cnIa);
+  if (!v) return;
+  const on = input.checked;
+  input.disabled = true;
+  const { error } = await supabase.from('vendors').update({ ia_enabled: on }).eq('id', v.id);
+  if (error) {
+    alert(`No se pudo cambiar la IA del canal: ${error.message}`);
+  } else {
+    v.ia_enabled = on;
+  }
+  renderVendorCards();
 });
 cnSearchEl.addEventListener('input', () => {
   cnState.search = cnSearchEl.value;

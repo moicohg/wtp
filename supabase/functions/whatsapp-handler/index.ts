@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { detectAppointment } from '../_shared/appointments.ts';
 import { agendaEnabled, aiAllowed, getOrgUsage, storageAllowed } from '../_shared/limits.ts';
+import { settleBurst, withoutPending } from '../_shared/burst.ts';
 import { understandMedia } from '../_shared/media-ai.ts';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -15,6 +16,7 @@ interface Vendor {
   ai_model: string;
   ai_api_key: string;
   system_prompt: string | null;
+  ia_enabled: boolean;
 }
 
 interface Prospect {
@@ -511,7 +513,7 @@ Deno.serve(async (req: Request) => {
 
     // La IA lee el adjunto solo si el bot va a responder (clave, IA activa en el lead, cupo y plan vigente):
     // nota de voz -> transcripción; imagen -> descripción. Si falla, queda guardado para una persona.
-    const botWillReply = Boolean(vendor.ai_api_key) && prospect.ia_enabled && aiAllowed(usage);
+    const botWillReply = Boolean(vendor.ai_api_key) && vendor.ia_enabled && prospect.ia_enabled && aiAllowed(usage);
     const understood =
       stored && botWillReply && (media!.type === 'audio' || media!.type === 'image')
         ? await understandMedia(vendor, media!.type as 'audio' | 'image', stored)
@@ -526,21 +528,23 @@ Deno.serve(async (req: Request) => {
         ? `[El cliente envió una imagen. Lo que muestra: ${understood}]${incomingText ? ` Mensaje del cliente: ${incomingText}` : ''}`
         : incomingText;
 
-    await supabase.from('messages').insert([
-      {
+    const { data: saved } = await supabase
+      .from('messages')
+      .insert({
         prospect_id: prospect.id,
         role: 'user',
         content: chatText || (media && !roomForMedia ? '📎 Adjunto no guardado: se alcanzó el límite de almacenamiento del plan' : ''),
         media_url: stored?.url ?? null,
         media_type: stored ? media!.type : null,
-      },
-    ]);
+      })
+      .select('id')
+      .single();
 
     // Sin texto que la IA pueda leer (audio sin transcribir, imagen sin pie ni descripción): atiende una persona.
     if (!aiText) return new Response('ok', { status: 200 });
 
-    if (!vendor.ai_api_key || !prospect.ia_enabled) {
-      console.warn('[vendor] sin ai_api_key o ia_enabled=false — mensaje guardado pero sin respuesta IA. vendor_id:', vendor.id);
+    if (!vendor.ai_api_key || !vendor.ia_enabled || !prospect.ia_enabled) {
+      console.warn('[vendor] sin ai_api_key, canal con IA apagada o ia_enabled=false — mensaje guardado pero sin respuesta IA. vendor_id:', vendor.id);
       return new Response('ok', { status: 200 });
     }
 
@@ -549,8 +553,14 @@ Deno.serve(async (req: Request) => {
       return new Response('ok', { status: 200 });
     }
 
-    // 5. Llamar a la IA con la api_key del vendor
-    const aiReply = await callAI(vendor, history, aiText, prospect);
+    // 5. Si el cliente sigue escribiendo, responde solo el handler del último mensaje y con todo junto.
+    const earlier = saved ? await settleBurst(supabase, prospect.id, saved.id) : [];
+    if (earlier === null) return new Response('ok', { status: 200 });
+    const fullText = [...earlier, aiText].join('\n');
+    const priorHistory = saved ? withoutPending(history) : history;
+
+    // 5b. Llamar a la IA con la api_key del vendor
+    const aiReply = await callAI(vendor, priorHistory, fullText, prospect);
 
     // 6. Guardar respuesta del asistente
     await supabase.from('messages').insert([
@@ -587,7 +597,7 @@ Deno.serve(async (req: Request) => {
 
     // 7b. ¿Quedó una cita? No bloquea la respuesta ya enviada.
     try {
-      if (agendaEnabled(usage)) await detectAppointment(supabase, vendor, prospect, history, aiText, aiReply.reply);
+      if (agendaEnabled(usage)) await detectAppointment(supabase, vendor, prospect, priorHistory, fullText, aiReply.reply);
     } catch (e) {
       console.warn('[agenda] no se pudo detectar cita:', e);
     }
