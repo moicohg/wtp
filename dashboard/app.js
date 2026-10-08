@@ -3997,6 +3997,11 @@ function setCalifUI(key) {
   const points = state.ciCalif[key];
   document.querySelector(`[data-calif-label="${key}"]`).textContent = points == null ? 'Sin calificar' : findCalifLabel(key, points);
   document.querySelector(`[data-calif-max="${key}"]`).textContent = `${points ?? 0}/${CALIF_RUBRIC[key].max}`;
+  // Tarjeta: sin elegir (gris), poco (ámbar), la mitad o más (verde azulado), máximo (verde).
+  const ratio = points == null ? 0 : points / CALIF_RUBRIC[key].max;
+  const card = document.querySelector(`[data-calif-card="${key}"]`);
+  card.dataset.level = points == null ? 'none' : ratio >= 1 ? 'full' : ratio >= 0.5 ? 'mid' : 'low';
+  document.querySelector(`[data-calif-bar="${key}"]`).style.width = `${Math.round(ratio * 100)}%`;
   renderCalifOptions(key);
 }
 
