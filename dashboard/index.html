@@ -754,7 +754,7 @@
               <div class="ci-header-title"><span class="ci-header-title-icon">👤</span> Info del Cliente</div>
               <div class="ci-header-actions">
                 <button type="button" class="ci-icon-btn" id="ci-agenda-btn" data-perm="agenda.manage" title="Agendar cita" aria-label="Agendar cita"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg></button>
-                <button type="button" class="ci-icon-btn" disabled title="Automatización (próximamente)">⚡</button>
+                <button type="button" class="ci-icon-btn" id="ci-auto-btn" data-perm="messaging.manage_automations" title="Inscribir en una cadencia de seguimiento" aria-label="Automatización"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></button>
                 <span class="ci-status-pill" id="ci-estado-pill"><span class="ci-status-dot"></span>Activo</span>
               </div>
             </div>
@@ -1883,6 +1883,26 @@
           <span id="ag-appt-status" class="settings-status"></span>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal: inscribir el chat en una cadencia de seguimiento -->
+  <div id="ci-auto-overlay" class="overlay" hidden>
+    <div class="modal">
+      <div class="drawer-header">
+        <h2>Automatización</h2>
+        <button class="btn-icon" id="ci-auto-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="settings-form">
+        <p class="muted" id="ci-auto-sub" style="margin:0;"></p>
+        <div id="ci-auto-body"></div>
+        <div id="ci-auto-current" hidden></div>
+        <div class="settings-actions settings-actions-left">
+          <button type="button" class="btn btn-ghost" id="ci-auto-cancel">Cerrar</button>
+          <button type="button" class="btn btn-primary" id="ci-auto-enroll" disabled>Inscribir</button>
+          <span id="ci-auto-status" class="settings-status"></span>
+        </div>
+      </div>
     </div>
   </div>
 

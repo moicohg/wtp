@@ -75,10 +75,11 @@ wtp/
 │   │   ├── update-vendor-ai/    Proveedor/clave/modelo/prompt de un canal y prueba de la clave
 │   │   ├── meta-exchange/       Conectar un canal de Meta (OAuth o token manual)
 │   │   ├── purge-media/         Borrado diario de adjuntos viejos (lo llama pg_cron)
+│   │   ├── automation-runner/   Envía los pasos de las cadencias a los leads inscritos (lo llama pg_cron cada 5 min)
 │   │   ├── lead-alerts/         Avisos de lead calificado sin respuesta (lo llama pg_cron cada minuto)
 │   │   ├── product-autocomplete/    Generar catálogo de productos con IA
 │   │   └── catalog-analyze-prompt/  Detectar productos en el system prompt
-│   └── migrations/             Esquema completo (31 archivos), en orden cronológico
+│   └── migrations/             Esquema completo (33 archivos), en orden cronológico
 ├── .claude/skills/             deploy · qa · esquema (ver más abajo)
 ├── .env.example                Secrets de las Edge Functions
 └── vercel.json                 outputDirectory = dashboard
@@ -98,7 +99,7 @@ wtp/
 | Productos | Catálogo de productos con precios (PEN/USD) y autocompletado por IA | `config.products` |
 | Catálogo IA | Archivos que la IA puede mencionar, asignados a uno o más canales | `config.products` |
 | Leads | Tabla de prospectos por canal con KPIs y drawer de detalle | `leads.view` |
-| Automatización | Cadencias multi-día (plantilla, pasos, audiencia). Solo definición, sin motor | `messaging.manage_automations` |
+| Automatización | Cadencias multi-día (plantilla, pasos, audiencia). Se pueden inscribir leads desde el chat (⚡) y el motor envía los pasos (ver [Cadencias](#cadencias)) | `messaging.manage_automations` |
 | Disponibilidad | Estado en tiempo real de cada vendedor, historial y config de reparto de leads y alertas (ver [Reparto de leads y alertas](#reparto-de-leads-y-alertas)) | todos |
 | Configuración | Usuarios de la empresa y Roles con permisos | `users.manage_users` / `users.manage_roles` |
 | Empresas | Crear empresas, fijar su plan (límites y vencimiento), activarlas y ver su consumo | solo super-admin |
@@ -106,6 +107,8 @@ wtp/
 **Pantalla Canales**: tabla con canal, estado, IA y asesor; pestañas Todos / Conectados / Desconectados / IA inactiva; búsqueda y filtro por asesor. Al elegir una fila, el panel de la derecha muestra asesor asignado, prompt de la IA, palabras clave, integraciones y las acciones (configurar, ver conversaciones, eliminar). Abajo, "Carga por asesor" y la tarjeta "Uso del plan" (solo administradores). Pixel de Meta, Formularios e Importar aparecen como "Próximamente".
 
 **Interruptor de IA por canal**: en la lista de Canales, cada canal con clave tiene un interruptor que apaga el bot en **todos** sus chats (`vendors.ia_enabled`, por defecto encendido). Es independiente del interruptor de cada chat (`prospects.ia_enabled`): el bot responde solo si ambos están encendidos. Con el canal apagado los mensajes se guardan y los atiende el equipo; la clave y el prompt se conservan. Lo pueden cambiar quienes tengan `config.manage_channels` o `config.ai_settings`, y el filtro "IA inactiva" incluye los canales apagados.
+
+**Inscribir en una cadencia**: el botón ⚡ del panel "Info del cliente" (requiere `messaging.manage_automations` y la sección Automatización habilitada) lista las cadencias reales de la empresa, inscribe al lead y muestra en cuáles está (con opción de sacarlo). Sin cadencias creadas avisa que se crean en Automatización. El envío lo hace el motor de cadencias.
 
 **Configurar un canal**: proveedor, modelo, API key, palabras clave y prompt. El botón **Probar conexión de IA** hace una llamada mínima al proveedor y avisa si la clave no coincide con el proveedor, es inválida, no tiene saldo o el modelo no existe.
 
@@ -183,6 +186,23 @@ Cada aviso se marca en `prospects.alerted_agent_for` / `alerted_owner_for` (desd
 
 ---
 
+## Cadencias
+
+Una cadencia (Automatización) es una lista de pasos `{day, hour, title, message}`. Se inscribe a un lead desde el botón ⚡ de su chat (`automation_enrollments`) y la Edge Function `automation-runner` envía cada paso por WhatsApp. pg_cron la llama cada 5 minutos y `due_automation_steps()` decide qué toca.
+
+- **Cuándo sale cada paso**: el paso "día N, hora H" sale N días después de la fecha de inscripción (en hora de Lima), a las H:00. El día 1 es mañana, así se puede sacar al lead antes de que salga el primer mensaje.
+- **Solo cadencias "activa"**: en borrador o pausada no sale nada (el chat avisa "no envía hasta activarla").
+- **Variable**: `{{nombre}}` se reemplaza por el primer nombre del lead; sin nombre se omite.
+- **Por dónde sale**: el canal del lead (QR o Meta). Meta solo permite texto libre dentro de las 24 h posteriores a un mensaje del cliente, así que fuera de esa ventana el envío falla.
+- **Reintentos**: si un paso falla (canal caído, ventana de Meta) queda pendiente con el error en `last_error` y se reintenta en cada corrida; pasadas 12 h de su hora se omite.
+- **Salida del lead** (`status = cancelada`, `exit_reason`): `perdido` (etapa perdido o descartado), `chat_inactivo` (el chat dejó de estar activo) y `conversion` (llegó a "por depositar" o "venta", salvo que la cadencia tenga "Ignorar salida por conversión"). Al terminar todos los pasos queda `completada`.
+- **En el chat**: cada mensaje queda guardado como `assistant` con `messages.by_automation = true`. No cuenta como respuesta humana en la alerta de lead sin respuesta.
+- Un solo paso por inscripción y corrida: el contador `current_step` se avanza antes de enviar para que dos corridas no repitan el mensaje.
+
+La **audiencia** de la cadencia (temperatura, etapa, score) todavía no inscribe leads sola: la inscripción es manual desde el chat.
+
+---
+
 ## Planes y límites por empresa
 
 El dueño de la plataforma fija el plan de cada empresa en **Empresas** (botón 🔢 abre la ventana de límites; "+30 días" renueva). Todos los topes se hacen cumplir en el servidor, no solo en la interfaz.
@@ -217,13 +237,14 @@ Tablas principales (todas en `public`):
 | `vendors` | Canal de WhatsApp con su bot: tipo (`evolution` / `meta`), credenciales, proveedor de IA, prompt, asesor asignado, keywords. Canales QR: `evolution_instance_id`, `evolution_connected`, `evolution_disconnected_at` (visible al panel) y `evolution_alerted_at` (interna) |
 | `agents` | Vendedor humano: nombre, teléfono, rol, estado en tiempo real, prioridad, vencimiento de acceso |
 | `prospects` | Lead. La IA calcula `score`, `label` (CALIFICADO / TIBIO / FRIO / DESCARTADO) y `conversation_step`. El humano edita etapa, etiquetas, perfil, notas, rúbrica y campos personalizados; `snoozed_until` y `attended_at` alimentan Posponer / Atendido. Al guardar la rúbrica, el trigger `apply_calificacion_score()` recalcula `score`/`label`/`prioridad` (≥70 CALIFICADO, 40-69 TIBIO, <40 FRIO) |
-| `messages` | Historial por prospecto (`user` / `assistant`), con `media_url` / `media_type` y `by_ai` (respuesta del bot) |
+| `messages` | Historial por prospecto (`user` / `assistant`), con `media_url` / `media_type`, `by_ai` (respuesta del bot) y `by_automation` (paso de una cadencia) |
 | `appointments` | Citas (`por_confirmar` / `confirmada` / `completada` / `cancelada`, origen `ia` / `manual`, fecha, cita textual). Tabla hija de `prospects` |
 | `roles` | Roles por empresa con array de permisos. "Administrador" es de sistema |
 | `products` | Catálogo de productos |
 | `catalog_files` | Archivos del Catálogo IA asignados a canales |
 | `custom_fields` | Definición de campos personalizados (los valores van en `prospects.custom_field_values`) |
 | `automations` | Definición de automatizaciones y su audiencia |
+| `automation_enrollments` | Leads inscritos en una cadencia (`activa` / `completada` / `cancelada`). Tabla hija de `prospects`; una sola inscripción activa por lead y cadencia |
 | `agent_status_log` | Historial de estados de cada vendedor |
 | `availability_settings` | Config de asignación inteligente y alertas, una fila por empresa |
 
@@ -281,6 +302,7 @@ Al crear una empresa, un trigger siembra los roles "Administrador" (sistema) y "
 | `update-vendor-ai` | Panel (config del bot) | sesión + `config.ai_settings` | Cambia proveedor, modelo, clave y prompt de un canal; acción `test` que prueba la clave |
 | `meta-exchange` | Panel (agregar canal Meta) | sesión + `config.manage_channels` | Intercambia el code de OAuth o acepta un token manual y crea el canal |
 | `purge-media` | pg_cron (`verify_jwt=false`) | cabecera `x-cron-secret` = `CRON_SECRET` | Borra los adjuntos con más de 90 días |
+| `automation-runner` | pg_cron cada 5 min (`verify_jwt=false`) | cabecera `x-cron-secret` = `CRON_SECRET` | Envía los pasos de las cadencias a los leads inscritos (ver [Cadencias](#cadencias)) |
 | `lead-alerts` | pg_cron cada minuto (`verify_jwt=false`) | cabecera `x-cron-secret` = `CRON_SECRET` | Avisa por WhatsApp de los leads calificados sin respuesta humana (ver [Reparto de leads y alertas](#reparto-de-leads-y-alertas)) |
 | `product-autocomplete` | Panel (Productos) | sesión + `config.products` | Genera productos con OpenAI a partir de una descripción del negocio |
 | `catalog-analyze-prompt` | Panel (Catálogo IA) | sesión + `config.products` | Detecta con OpenAI qué productos menciona el system prompt del canal |
@@ -313,6 +335,7 @@ pg_cron está activo (la migración `20260925000000_limites_ia_archivos.sql` cre
 |---|---|---|
 | `purge-chat-media` | todos los días 08:00 UTC | `net.http_post` a `purge-media` con `x-cron-secret` (leído de Vault en cada ejecución) |
 | `lead-alerts` | cada minuto | Igual, hacia `lead-alerts` (migración `20260929000000_reparto_y_alertas.sql`) |
+| `automation-runner` | cada 5 minutos | Igual, hacia `automation-runner` (migración `20260930300000_motor_cadencias.sql`) |
 
 El valor del secreto **no está en el repositorio**: se crea una vez con `select vault.create_secret('<valor>', 'cron_secret')` y el mismo valor va en el secret `CRON_SECRET` de las Edge Functions (`supabase secrets set CRON_SECRET=…`). Sin él, `purge-media` responde 401.
 
@@ -330,7 +353,7 @@ Secrets de las Edge Functions. Configurar con `supabase secrets set --env-file .
 | `META_REGISTER_PIN` | PIN de 6 dígitos con el que `meta-exchange` registra el número al conectar con "Continuar con Facebook". Sin él se omite el registro |
 | `OPENAI_API_KEY` | `product-autocomplete` y `catalog-analyze-prompt` (clave de la plataforma; la IA de cada canal usa la suya) |
 | `BURST_WAIT_MS` | Opcional. Espera en milisegundos para agrupar mensajes en ráfaga (6000 por defecto; 0 la desactiva) |
-| `CRON_SECRET` | Autentica a pg_cron ante `purge-media` y `lead-alerts` (mismo valor que el secreto `cron_secret` de Vault) |
+| `CRON_SECRET` | Autentica a pg_cron ante `purge-media`, `lead-alerts` y `automation-runner` (mismo valor que el secreto `cron_secret` de Vault) |
 
 El panel lleva `SUPABASE_URL` y la clave publicable hardcodeadas al inicio de [dashboard/app.js](dashboard/app.js). Ahí mismo van `META_APP_ID` y `META_CONFIG_ID` (públicos) para el botón "Continuar con Facebook".
 
@@ -443,7 +466,7 @@ Pendiente o solo definido:
 - **Audio en canales Anthropic**: Anthropic no transcribe; esas notas de voz quedan guardadas para una persona.
 - **Cobro automático**: un pago aprobado (Mercado Pago) podría mover `plan_expires_at` +30 días. Hoy se renueva a mano desde Empresas.
 - **Pixel de Meta, Formularios e Importar** (Canales): botones marcados "Próximamente".
-- **Motor de automatizaciones**: se guarda la cadencia y la audiencia, pero no existe el proceso que inscribe leads y envía mensajes programados.
+- **Inscripción automática por audiencia**: la cadencia guarda su audiencia (temperatura, etapa, score), pero los leads solo se inscriben a mano desde el chat. Activar una cadencia no escribe a los leads existentes que coincidan.
 - **Reasignación y alerta por cambio de etapa**: el reparto solo actúa al crear el lead (no reasigna si el asesor se desconecta) y la alerta "lead entró a la etapa X" (`alert_etapas`) se guarda pero no tiene motor; solo está implementada la alerta por falta de respuesta.
 - **Permisos sin UI que gatear**: `leads.create_contacts`, `messaging.send_broadcasts`, `messaging.view_broadcasts`, `messaging.manage_templates`, `config.migrate_channels`.
 - **Vincular un agente existente a un login**: `admin-users` acepta `agent_id`, pero el panel no ofrece el botón.
@@ -452,6 +475,7 @@ Pendiente o solo definido:
 
 Sin verificar de punta a punta en producción:
 
+- **Envío exitoso de una cadencia**: el motor se probó con datos QA (salida por conversión, omisión por retraso, cierre y reintento ante canal caído), pero no con un envío real a un cliente.
 - **Reparto, ráfaga y alerta de lead sin respuesta**: la migración `20260929000000` se validó en la base real con rollback, pero falta aplicarla, desplegar `lead-alerts`, `whatsapp-handler` y `meta-webhook`, y probar con un lead real.
 - **WhatsApp de aviso de caída**: el envío no se pudo probar porque no había un segundo canal QR conectado. El banner y el registro de la caída sí están probados.
 - **Aviso de 7 días y pantalla "Plan vencido" con un usuario real**: la regla de la base está probada; falta una empresa cliente no super-admin para verlo en pantalla.

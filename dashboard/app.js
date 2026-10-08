@@ -3735,6 +3735,7 @@ async function openChannelProspect(prospectId) {
 
   setEstadoPill(p.estado_conversacion);
   document.getElementById('ci-agenda-btn').hidden = !sectionEnabled('agenda') || !can('agenda.manage');
+  document.getElementById('ci-auto-btn').hidden = !sectionEnabled('automatizacion') || !can('messaging.manage_automations');
   setTempMeter(p.score, p.label);
   ciAgent.value = p.handled_by_agent_id ?? '';
   state.ciTags = (p.etiquetas ?? []).slice();
@@ -6747,6 +6748,126 @@ agApptOverlay.addEventListener('click', (ev) => {
 document.getElementById('ag-new-btn').addEventListener('click', () => openApptModal());
 
 // Botón de calendario del panel "Info del cliente": agenda una cita con el lead abierto.
+
+// ── Botón ⚡ del chat: inscribir al lead en una cadencia de seguimiento ────────
+
+const ciAutoOverlay = document.getElementById('ci-auto-overlay');
+const ciAutoBody = document.getElementById('ci-auto-body');
+const ciAutoCurrent = document.getElementById('ci-auto-current');
+const ciAutoEnrollBtn = document.getElementById('ci-auto-enroll');
+const ciAutoStatus = document.getElementById('ci-auto-status');
+const ciAutoState = { prospectId: null, automations: [], enrollments: [], selectedId: null };
+
+async function openAutomationModal() {
+  const p = state.channelProspects.find((x) => x.id === state.channelActiveProspectId);
+  if (!p) return;
+  Object.assign(ciAutoState, { prospectId: p.id, selectedId: null, automations: [], enrollments: [] });
+  document.getElementById('ci-auto-sub').textContent = `Inscribe a ${p.nombre || p.phone} en una cadencia de seguimiento.`;
+  ciAutoBody.innerHTML = '<p class="muted">Cargando cadencias…</p>';
+  ciAutoCurrent.hidden = true;
+  ciAutoEnrollBtn.disabled = true;
+  ciAutoStatus.textContent = '';
+  ciAutoOverlay.hidden = false;
+  await loadAutomationModalData();
+}
+
+async function loadAutomationModalData() {
+  const prospectId = ciAutoState.prospectId;
+  const [autos, enr] = await Promise.all([
+    supabase.from('automations').select('id, name, status, steps').order('created_at', { ascending: false }),
+    supabase.from('automation_enrollments').select('id, automation_id, enrolled_at, current_step').eq('prospect_id', prospectId).eq('status', 'activa'),
+  ]);
+  if (ciAutoState.prospectId !== prospectId || ciAutoOverlay.hidden) return;
+  const error = autos.error || enr.error;
+  if (error) {
+    ciAutoBody.innerHTML = `<p class="muted">No se pudieron cargar las cadencias: ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  ciAutoState.automations = autos.data ?? [];
+  ciAutoState.enrollments = enr.data ?? [];
+  renderAutomationModal();
+}
+
+// Cuándo sale el paso N de una cadencia: N días después de la inscripción, a la hora indicada (Lima, UTC-5).
+function nextStepInfo(enrollment, automation) {
+  const steps = Array.isArray(automation?.steps) ? automation.steps : [];
+  const step = steps[enrollment.current_step ?? 0];
+  if (!step) return 'Ya recibió todos los pasos';
+  const lima = new Date(new Date(enrollment.enrolled_at).getTime() - 5 * 3600_000);
+  const at = new Date(Date.UTC(lima.getUTCFullYear(), lima.getUTCMonth(), lima.getUTCDate() + (Number(step.day) || 1), (Number(step.hour) || 0) + 5));
+  const when = at.toLocaleString('es-PE', { timeZone: 'America/Lima', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return `Próximo: ${step.title || `Paso ${(enrollment.current_step ?? 0) + 1}`} · ${when}`;
+}
+
+function renderAutomationModal() {
+  const enrolledIds = new Set(ciAutoState.enrollments.map((e) => e.automation_id));
+  const available = ciAutoState.automations.filter((a) => !enrolledIds.has(a.id));
+  if (!ciAutoState.automations.length) {
+    ciAutoBody.innerHTML = '<p class="muted" style="text-align:center;padding:18px 0;">No hay cadencias disponibles. Créalas en la sección de Automatización.</p>';
+  } else if (!available.length) {
+    ciAutoBody.innerHTML = '<p class="muted" style="text-align:center;padding:18px 0;">Este lead ya está inscrito en todas las cadencias disponibles.</p>';
+  } else {
+    ciAutoBody.innerHTML = available
+      .map((a) => {
+        const n = Array.isArray(a.steps) ? a.steps.length : 0;
+        return `<label class="ci-auto-option"><input type="radio" name="ci-auto" value="${a.id}" ${a.id === ciAutoState.selectedId ? 'checked' : ''} />
+          <span><b>${escapeHtml(a.name)}</b><small>${n} paso${n === 1 ? '' : 's'} · ${escapeHtml(a.status || 'borrador')}</small></span></label>`;
+      })
+      .join('');
+  }
+  ciAutoEnrollBtn.disabled = !ciAutoState.selectedId;
+
+  ciAutoCurrent.hidden = !ciAutoState.enrollments.length;
+  ciAutoCurrent.innerHTML = ciAutoState.enrollments.length
+    ? '<div class="ag-appt-list-title">Inscrito en</div>' +
+      ciAutoState.enrollments
+        .map((e) => {
+          const a = ciAutoState.automations.find((x) => x.id === e.automation_id);
+          return `<div class="ag-appt-list-item" data-enrollment="${e.id}"><span><b>${escapeHtml(a?.name ?? 'Cadencia')}</b><small>${escapeHtml(a?.status === 'activa' ? nextStepInfo(e, a) : `Cadencia en ${a?.status ?? 'borrador'}: no envía hasta activarla`)}</small></span>
+            <button type="button" class="ag-btn ag-btn-sq" data-enrollment-remove title="Sacar de la cadencia" aria-label="Sacar de la cadencia">✕</button></div>`;
+        })
+        .join('') +
+      '<p class="muted" style="margin:4px 0 0;">Los mensajes salen solos a la hora de cada paso, desde el canal de este lead. Si el lead llega a venta o se pierde, sale de la cadencia.</p>'
+    : '';
+}
+
+ciAutoBody.addEventListener('change', (ev) => {
+  if (ev.target.name !== 'ci-auto') return;
+  ciAutoState.selectedId = ev.target.value;
+  ciAutoEnrollBtn.disabled = false;
+});
+ciAutoEnrollBtn.addEventListener('click', async () => {
+  if (!ciAutoState.selectedId) return;
+  ciAutoEnrollBtn.disabled = true;
+  ciAutoStatus.textContent = 'Inscribiendo…';
+  const { error } = await supabase
+    .from('automation_enrollments')
+    .insert({ prospect_id: ciAutoState.prospectId, automation_id: ciAutoState.selectedId });
+  if (error) {
+    ciAutoStatus.textContent = `Error: ${error.message}`;
+    ciAutoStatus.className = 'settings-status err';
+    ciAutoEnrollBtn.disabled = false;
+    return;
+  }
+  ciAutoState.selectedId = null;
+  ciAutoStatus.textContent = 'Lead inscrito ✓';
+  ciAutoStatus.className = 'settings-status ok';
+  await loadAutomationModalData();
+});
+ciAutoCurrent.addEventListener('click', async (ev) => {
+  const id = ev.target.closest('[data-enrollment-remove]')?.closest('[data-enrollment]')?.dataset.enrollment;
+  if (!id || !confirm('¿Sacar a este lead de la cadencia?')) return;
+  const { error } = await supabase.from('automation_enrollments').delete().eq('id', id);
+  if (error) return alert(`No se pudo sacar de la cadencia: ${error.message}`);
+  ciAutoStatus.textContent = '';
+  await loadAutomationModalData();
+});
+document.getElementById('ci-auto-btn').addEventListener('click', openAutomationModal);
+for (const id of ['ci-auto-close', 'ci-auto-cancel']) document.getElementById(id).addEventListener('click', () => (ciAutoOverlay.hidden = true));
+ciAutoOverlay.addEventListener('click', (ev) => {
+  if (ev.target === ciAutoOverlay) ciAutoOverlay.hidden = true;
+});
+
 document.getElementById('ci-agenda-btn').addEventListener('click', () => {
   const p = state.channelProspects.find((x) => x.id === state.channelActiveProspectId);
   if (!p) return;

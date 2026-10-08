@@ -16,3 +16,7 @@ verify_jwt = false
 # Lo llama pg_cron cada minuto (sin JWT) con el secreto x-cron-secret.
 [functions.lead-alerts]
 verify_jwt = false
+
+# Lo llama pg_cron cada 5 minutos (sin JWT) con el secreto x-cron-secret.
+[functions.automation-runner]
+verify_jwt = false
