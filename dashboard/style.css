@@ -2664,3 +2664,49 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 .ci-auto-option small { display: block; color: var(--text-dim); }
 #ci-auto-current { border-top: 1px solid var(--border-subtle); padding-top: 12px; display: grid; gap: 6px; }
 #ci-auto-enroll[disabled] { opacity: .45; cursor: not-allowed; }
+
+/* Encabezado del chat: selectores "Nuevo ▾" y "Sin etapa ▾" ─────────────────
+   Más grandes, con una flecha dentro de un círculo para que se note que
+   despliegan un menú; la flecha gira mientras está abierto. */
+#ct-perfil-trigger, #ct-etapa-trigger {
+  gap: 9px; min-height: 38px; padding: 6px 8px 6px 14px;
+  border: 1.5px solid var(--border-hover); background: var(--surface);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .06);
+  font-size: 13.5px; font-weight: 700;
+  transition: border-color .15s, box-shadow .15s;
+}
+#ct-perfil-trigger:hover, #ct-etapa-trigger:hover,
+#ct-perfil-trigger:has(+ .ct-dropdown-panel:not([hidden])),
+#ct-etapa-trigger:has(+ .ct-dropdown-panel:not([hidden])) {
+  border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-glow);
+}
+#ct-etapa-trigger.ct-chip-tinted {
+  background: color-mix(in srgb, var(--tint, var(--brand)) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--tint, var(--brand)) 45%, transparent);
+}
+#ct-perfil-trigger .ct-dot { width: 10px; height: 10px; }
+#ct-perfil-trigger .filter-caret, #ct-etapa-trigger .filter-caret {
+  position: relative; flex-shrink: 0; width: 24px; height: 24px; margin: 0; border-radius: 50%;
+  font-size: 0; color: var(--text-secondary);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  transition: background .15s;
+}
+#ct-etapa-trigger.ct-chip-tinted .filter-caret { color: var(--tint, var(--brand)); }
+#ct-perfil-trigger .filter-caret::after, #ct-etapa-trigger .filter-caret::after {
+  content: ''; position: absolute; left: 50%; top: 45%;
+  width: 7px; height: 7px; border-right: 2.5px solid currentColor; border-bottom: 2.5px solid currentColor;
+  transform: translate(-50%, -50%) rotate(45deg); transition: transform .15s, top .15s;
+}
+#ct-perfil-trigger:hover .filter-caret, #ct-etapa-trigger:hover .filter-caret { background: color-mix(in srgb, currentColor 18%, transparent); }
+#ct-perfil-trigger:has(+ .ct-dropdown-panel:not([hidden])) .filter-caret::after,
+#ct-etapa-trigger:has(+ .ct-dropdown-panel:not([hidden])) .filter-caret::after {
+  top: 58%; transform: translate(-50%, -50%) rotate(-135deg);
+}
+#ct-ia-toggle { min-height: 38px; padding: 6px 16px; font-weight: 700; }
+/* Con los selectores más grandes, el nombre y el teléfono se recortan con "…" en vez de partirse. */
+.channel-thread-heading { flex: 1; overflow: hidden; }
+.channel-thread-heading strong, .channel-thread-heading #ct-phone { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Si no caben en una línea, los selectores pasan debajo del nombre en vez de apretarlo. */
+.channel-thread-header { flex-wrap: wrap; row-gap: 8px; }
+.channel-thread-heading { flex: 1 1 150px; }
+.channel-thread-controls { margin-left: auto; }
