@@ -78,7 +78,7 @@ wtp/
 │   │   ├── lead-alerts/         Avisos de lead calificado sin respuesta (lo llama pg_cron cada minuto)
 │   │   ├── product-autocomplete/    Generar catálogo de productos con IA
 │   │   └── catalog-analyze-prompt/  Detectar productos en el system prompt
-│   └── migrations/             Esquema completo (30 archivos), en orden cronológico
+│   └── migrations/             Esquema completo (31 archivos), en orden cronológico
 ├── .claude/skills/             deploy · qa · esquema (ver más abajo)
 ├── .env.example                Secrets de las Edge Functions
 └── vercel.json                 outputDirectory = dashboard
@@ -143,7 +143,8 @@ Pantalla **Agenda**. Todo sale de la base de la empresa (`prospect_inbox`, `pros
 - **Indicadores**: leads en cola, citas de hoy, citas por confirmar y monto en juego (suma de presupuestos de la cola, en la moneda que más se repite).
 - **Siguiente mejor acción**: el lead de mayor prioridad, con "por qué ahora", anillo de prioridad y cuatro barras. Acciones: abrir conversación, llamar, agendar cita, **Atendido** y **Posponer** (1 h, 3 h o mañana 9:00).
 - **Cola priorizada**: tabla con filtros Todos / Calientes / Tibios / Fríos (por `label`).
-- **Citas**: "Por confirmar" (propuestas por la IA, con Confirmar / Editar / Descartar), "Citas de hoy" con navegación por día, calendario mensual y **Nueva cita** manual.
+- **Citas**: "Por confirmar" (propuestas por la IA, con Confirmar / Editar / Descartar), "Citas de hoy" con navegación por día, calendario mensual y **Nueva cita** manual (título, fecha, hora, duración, lead y notas; `appointments.duration_minutes`, 60 por defecto).
+- **Desde el chat**: el icono de calendario del panel "Info del cliente" (mismo icono que Agenda; requiere `agenda.manage` y la sección Agenda habilitada) abre el mismo modal con el lead ya elegido y, debajo, sus citas reales (con opción de cancelar).
 
 **Prioridad (0-100)** = 35 % urgencia + 25 % valor + 25 % frescura + 15 % momentum:
 

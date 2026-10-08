@@ -1524,6 +1524,8 @@ tbody tr:hover {
   border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
 }
 .ci-icon-btn[disabled] { opacity: .5; cursor: not-allowed; }
+button.ci-icon-btn:not([disabled]) { cursor: pointer; }
+button.ci-icon-btn:not([disabled]):hover { color: var(--brand); border-color: var(--brand); }
 
 .ci-status-pill {
   display: inline-flex; align-items: center; gap: 5px;
@@ -2630,3 +2632,11 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 .avail-mode-option:has(input:checked) { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
 .avail-mode-option input { margin-top: 3px; }
 .avail-mode-body { display: grid; gap: 4px; }
+
+/* Modal "Nueva cita" */
+.ag-appt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+#ag-appt-lead-list { border-top: 1px solid var(--border-subtle); padding-top: 12px; display: grid; gap: 6px; }
+.ag-appt-list-title { font-size: 11px; font-weight: 800; letter-spacing: .06em; color: var(--text-dim); text-transform: uppercase; }
+.ag-appt-list-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; }
+.ag-appt-list-item small { display: block; color: var(--text-dim); }
+.ci-icon-btn[hidden], #ag-appt-lead-list[hidden] { display: none; }

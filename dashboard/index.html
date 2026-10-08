@@ -753,7 +753,7 @@
             <div class="ci-header">
               <div class="ci-header-title"><span class="ci-header-title-icon">👤</span> Info del Cliente</div>
               <div class="ci-header-actions">
-                <button type="button" class="ci-icon-btn" disabled title="Agendar cita (próximamente)">📅</button>
+                <button type="button" class="ci-icon-btn" id="ci-agenda-btn" data-perm="agenda.manage" title="Agendar cita" aria-label="Agendar cita"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg></button>
                 <button type="button" class="ci-icon-btn" disabled title="Automatización (próximamente)">⚡</button>
                 <span class="ci-status-pill" id="ci-estado-pill"><span class="ci-status-dot"></span>Activo</span>
               </div>
@@ -1840,29 +1840,46 @@
         <h2 id="ag-appt-title">Nueva cita</h2>
         <button class="btn-icon" id="ag-appt-close" type="button" aria-label="Cerrar">✕</button>
       </div>
+      <p class="muted" id="ag-appt-sub" style="margin:0;padding:10px 20px 0;">Agenda una cita con un lead. Aparece en la Agenda como confirmada.</p>
       <form id="ag-appt-form" class="settings-form">
+        <label>
+          Título
+          <input name="title" type="text" list="ag-appt-titles" maxlength="80" required placeholder="Llamada de seguimiento, visita…" autocomplete="off" />
+          <datalist id="ag-appt-titles"><option value="Visita"></option><option value="Llamada"></option><option value="Reunión"></option></datalist>
+        </label>
+        <div class="ag-appt-row">
+          <label>
+            Fecha
+            <input name="date" type="date" required />
+          </label>
+          <label>
+            Hora
+            <input name="time" type="time" required />
+          </label>
+        </div>
+        <label>
+          Duración
+          <select name="duration">
+            <option value="15">15 minutos</option>
+            <option value="30">30 minutos</option>
+            <option value="45">45 minutos</option>
+            <option value="60" selected>1 hora</option>
+            <option value="90">1 hora 30 min</option>
+            <option value="120">2 horas</option>
+            <option value="180">3 horas</option>
+          </select>
+        </label>
         <label>
           Lead
           <select name="prospect_id" id="ag-appt-prospect" required></select>
         </label>
         <label>
-          Tipo
-          <select name="title">
-            <option>Visita</option>
-            <option>Llamada</option>
-            <option>Reunión</option>
-          </select>
-        </label>
-        <label>
-          Fecha y hora
-          <input name="when" type="datetime-local" required />
-        </label>
-        <label>
           Notas <span class="hint">(opcional)</span>
-          <textarea name="notes" rows="3" placeholder="Dirección, a quién preguntar, qué llevar…"></textarea>
+          <textarea name="notes" rows="3" placeholder="Contexto de la cita, dirección, qué llevar…"></textarea>
         </label>
+        <div id="ag-appt-lead-list" hidden></div>
         <div class="settings-actions settings-actions-left">
-          <button type="submit" class="btn btn-primary" id="ag-appt-save">Guardar</button>
+          <button type="submit" class="btn btn-primary" id="ag-appt-save">Crear cita</button>
           <span id="ag-appt-status" class="settings-status"></span>
         </div>
       </form>

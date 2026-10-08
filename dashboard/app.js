@@ -3734,6 +3734,7 @@ async function openChannelProspect(prospectId) {
   closeCtDropdowns();
 
   setEstadoPill(p.estado_conversacion);
+  document.getElementById('ci-agenda-btn').hidden = !sectionEnabled('agenda') || !can('agenda.manage');
   setTempMeter(p.score, p.label);
   ciAgent.value = p.handled_by_agent_id ?? '';
   state.ciTags = (p.etiquetas ?? []).slice();
@@ -6632,36 +6633,99 @@ const toLocalInput = (d) => {
   return x.toISOString().slice(0, 16);
 };
 
-function openApptModal({ apptId = null, prospectId = null } = {}) {
+// Desde el chat de un lead (lockedLead) el lead va fijo y el modal lista sus citas reales.
+function openApptModal({ apptId = null, prospectId = null, lockedLead = null } = {}) {
   const appt = agendaState.appts.find((a) => a.id === apptId);
   agendaState.editingApptId = appt?.id ?? null;
+  agendaState.apptFromChat = Boolean(lockedLead);
   document.getElementById('ag-appt-title').textContent = appt ? 'Editar cita' : 'Nueva cita';
-  const rows = [...agendaState.rows].sort((a, b) => agDisplayName(a).localeCompare(agDisplayName(b)));
+  document.getElementById('ag-appt-save').textContent = appt ? 'Guardar' : 'Crear cita';
   const select = document.getElementById('ag-appt-prospect');
-  select.innerHTML = rows.map((r) => `<option value="${r.id}">${escapeHtml(agDisplayName(r))} · ${escapeHtml(r.vendor_name ?? '')}</option>`).join('');
-  select.value = appt?.prospect_id ?? prospectId ?? rows[0]?.id ?? '';
-  select.disabled = Boolean(appt);
-  agApptForm.elements.title.value = appt?.title ?? 'Visita';
-  const base = new Date(agendaState.day);
+  if (lockedLead) {
+    select.innerHTML = `<option value="${lockedLead.id}">${escapeHtml(lockedLead.name)}</option>`;
+    select.value = lockedLead.id;
+  } else {
+    const rows = [...agendaState.rows].sort((a, b) => agDisplayName(a).localeCompare(agDisplayName(b)));
+    select.innerHTML = rows.map((r) => `<option value="${r.id}">${escapeHtml(agDisplayName(r))} · ${escapeHtml(r.vendor_name ?? '')}</option>`).join('');
+    select.value = appt?.prospect_id ?? prospectId ?? rows[0]?.id ?? '';
+  }
+  select.disabled = Boolean(appt || lockedLead);
+  agApptForm.elements.title.value = appt?.title ?? '';
+  const base = lockedLead ? new Date() : new Date(agendaState.day);
   if (sameDay(base, new Date())) base.setTime(Date.now() + 3600000);
   else base.setHours(10, 0, 0, 0);
   base.setMinutes(0, 0, 0);
-  agApptForm.elements.when.value = toLocalInput(appt?.scheduled_at ?? base);
+  const [date, time] = toLocalInput(appt?.scheduled_at ?? base).split('T');
+  agApptForm.elements.date.value = date;
+  agApptForm.elements.time.value = time;
+  agApptForm.elements.duration.value = String(appt?.duration_minutes ?? 60);
   agApptForm.elements.notes.value = appt?.notes ?? '';
   agApptStatus.textContent = '';
+  renderLeadApptList(lockedLead?.id ?? null);
   agApptOverlay.hidden = false;
+  agApptForm.elements.title.focus();
 }
+
+const APPT_STATUS_LABEL = { por_confirmar: 'Por confirmar', confirmada: 'Confirmada', completada: 'Realizada' };
+
+// Citas reales de este lead (no canceladas), de la base de datos.
+async function renderLeadApptList(prospectId) {
+  const box = document.getElementById('ag-appt-lead-list');
+  box.hidden = !prospectId;
+  if (!prospectId) return;
+  box.innerHTML = '<p class="muted">Cargando citas de este lead…</p>';
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('id, title, scheduled_at, duration_minutes, status, notes')
+    .eq('prospect_id', prospectId)
+    .neq('status', 'cancelada')
+    .order('scheduled_at', { ascending: false })
+    .limit(10);
+  if (state.channelActiveProspectId !== prospectId || agApptOverlay.hidden) return;
+  if (error) {
+    box.innerHTML = `<p class="muted">No se pudieron cargar las citas: ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  const when = (d) => new Date(d).toLocaleString('es-PE', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  box.innerHTML =
+    `<div class="ag-appt-list-title">Citas de este lead</div>` +
+    (data.length
+      ? data
+          .map(
+            (a) => `<div class="ag-appt-list-item" data-lead-appt="${a.id}">
+              <span><b>${escapeHtml(a.title)}</b><small>${escapeHtml(when(a.scheduled_at))} · ${a.duration_minutes} min · ${APPT_STATUS_LABEL[a.status] ?? a.status}</small></span>
+              ${a.status === 'completada' ? '' : '<button type="button" class="ag-btn ag-btn-sq" data-lead-appt-cancel title="Cancelar cita" aria-label="Cancelar cita">✕</button>'}
+            </div>`
+          )
+          .join('')
+      : '<p class="muted">Este lead todavía no tiene citas.</p>');
+}
+
+document.getElementById('ag-appt-lead-list').addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('[data-lead-appt-cancel]');
+  const id = btn?.closest('[data-lead-appt]')?.dataset.leadAppt;
+  if (!id || !confirm('¿Cancelar esta cita?')) return;
+  const { error } = await supabase.from('appointments').update({ status: 'cancelada' }).eq('id', id);
+  if (error) return alert(`No se pudo cancelar la cita: ${error.message}`);
+  renderLeadApptList(state.channelActiveProspectId);
+  if (sectionEnabled('agenda')) loadAgenda().catch(() => {});
+});
 
 agApptForm.addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const fd = new FormData(agApptForm);
-  const when = new Date(fd.get('when'));
+  const when = new Date(`${fd.get('date')}T${fd.get('time')}`);
   if (Number.isNaN(when.getTime())) {
     agApptStatus.textContent = 'Indica la fecha y la hora.';
     agApptStatus.className = 'settings-status err';
     return;
   }
-  const fields = { title: fd.get('title'), scheduled_at: when.toISOString(), notes: fd.get('notes')?.toString().trim() || null };
+  const fields = {
+    title: fd.get('title')?.toString().trim() || 'Cita',
+    scheduled_at: when.toISOString(),
+    duration_minutes: Number(fd.get('duration')) || 60,
+    notes: fd.get('notes')?.toString().trim() || null,
+  };
   agApptStatus.textContent = 'Guardando…';
   agApptStatus.className = 'settings-status';
   const { error } = agendaState.editingApptId
@@ -6673,14 +6737,21 @@ agApptForm.addEventListener('submit', async (ev) => {
     return;
   }
   agApptOverlay.hidden = true;
-  agendaState.day = startOfDay(when);
-  await loadAgenda();
+  if (!agendaState.apptFromChat) agendaState.day = startOfDay(when);
+  if (sectionEnabled('agenda')) await loadAgenda();
 });
 document.getElementById('ag-appt-close').addEventListener('click', () => (agApptOverlay.hidden = true));
 agApptOverlay.addEventListener('click', (ev) => {
   if (ev.target === agApptOverlay) agApptOverlay.hidden = true;
 });
 document.getElementById('ag-new-btn').addEventListener('click', () => openApptModal());
+
+// Botón de calendario del panel "Info del cliente": agenda una cita con el lead abierto.
+document.getElementById('ci-agenda-btn').addEventListener('click', () => {
+  const p = state.channelProspects.find((x) => x.id === state.channelActiveProspectId);
+  if (!p) return;
+  openApptModal({ lockedLead: { id: p.id, name: p.nombre || p.phone } });
+});
 
 // ── Navegación por día y calendario ──────────────────────────────────────────
 
