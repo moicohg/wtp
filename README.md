@@ -52,7 +52,7 @@ Repositorio: https://github.com/moicohg/wtp
 wtp/
 ├── dashboard/                  Panel web (se sirve tal cual, sin build)
 │   ├── index.html              Todas las vistas, modales y la pantalla de login
-│   ├── app.js                  Lógica completa del panel (~6.700 líneas)
+│   ├── app.js                  Lógica completa del panel (~6.900 líneas)
 │   ├── style.css               Estilos
 │   └── privacidad.html · terminos.html · eliminar-datos.html   Páginas públicas que exige Meta
 ├── supabase/
@@ -112,7 +112,9 @@ wtp/
 
 **Configurar un canal**: proveedor, modelo, API key, palabras clave y prompt. El botón **Probar conexión de IA** hace una llamada mínima al proveedor y avisa si la clave no coincide con el proveedor, es inválida, no tiene saldo o el modelo no existe.
 
-**Chat**: el panel "Info del cliente" permite editar etapa, perfil, etiquetas, estado de conversación, calificación por rúbrica (Necesidad / Inversión / Urgencia / Autoridad), campos personalizados y apagar la IA solo para ese chat (el interruptor del canal apaga todos). Las notas de voz muestran su transcripción (🎙) y las imágenes su descripción (🖼).
+**Chat**: el panel "Info del cliente" permite editar etapa, perfil, etiquetas, estado de conversación, calificación por rúbrica (Necesidad / Inversión / Urgencia / Autoridad, una tarjeta por criterio con barra y color según el puntaje), campos personalizados y apagar la IA solo para ese chat (el interruptor del canal apaga todos). Las notas de voz muestran su transcripción (🎙) y las imágenes su descripción (🖼).
+
+Los módulos de "Info del cliente" se despliegan con una flecha visible, y los selectores de etapa y estado del encabezado del chat (Nuevo, Sin etapa) son más grandes.
 
 El topbar tiene un selector rápido para que el vendedor cambie su propio estado (listo, atendiendo, pausa, fuera de atención). El menú lateral usa iconos de línea sin color.
 
