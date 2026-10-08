@@ -2710,3 +2710,45 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 .channel-thread-header { flex-wrap: wrap; row-gap: 8px; }
 .channel-thread-heading { flex: 1 1 150px; }
 .channel-thread-controls { margin-left: auto; }
+
+/* Panel "Info del cliente": secciones (Asignación, Etiquetas, Calificación…) ───────
+   Encabezado con más contraste y franja de color; el cuerpo con otro fondo para que se
+   note dónde empieza y termina cada módulo; flecha grande en un círculo, centrada. */
+.ci-section { border-top: none; }
+.ci-section > summary {
+  padding: 13px 18px; gap: 10px;
+  background: color-mix(in srgb, var(--brand) 15%, var(--surface));
+  box-shadow: inset 4px 0 0 var(--brand);
+  border-top: 1px solid color-mix(in srgb, var(--brand) 22%, var(--surface));
+  border-bottom: 1px solid color-mix(in srgb, var(--brand) 22%, var(--surface));
+  font-size: 12px; font-weight: 800; color: var(--brand-dark);
+  transition: background .15s;
+}
+.ci-section > summary:hover { background: color-mix(in srgb, var(--brand) 22%, var(--surface)); }
+.ci-drag { color: color-mix(in srgb, var(--brand) 45%, var(--surface)); }
+.ci-section > summary .ci-chevron {
+  position: relative; flex-shrink: 0; margin-left: auto;
+  width: 28px; height: 28px; border-radius: 50%;
+  font-size: 0; color: var(--brand-dark);
+  background: var(--surface); border: 1.5px solid color-mix(in srgb, var(--brand) 35%, var(--surface));
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .08);
+  transform: none; transition: background .15s, border-color .15s;
+}
+.ci-section > summary:hover .ci-chevron { border-color: var(--brand); background: var(--brand-light); }
+/* Cerrada: flecha hacia abajo (se puede desplegar). Abierta: hacia arriba (se puede plegar). */
+.ci-section > summary .ci-chevron::after {
+  content: ''; position: absolute; left: 50%; top: 46%;
+  width: 8px; height: 8px; border-right: 2.5px solid currentColor; border-bottom: 2.5px solid currentColor;
+  transform: translate(-50%, -50%) rotate(45deg); transition: transform .15s, top .15s;
+}
+.ci-section[open] > summary .ci-chevron::after { top: 58%; transform: translate(-50%, -50%) rotate(-135deg); }
+.ci-section:not([open]) > summary .ci-chevron { transform: none; }
+
+.ci-section-body {
+  margin: 0 -18px; padding: 14px 18px 16px;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+}
+.ci-section-body .ci-ghost-btn, .ci-section-body .ci-add-btn { background: var(--surface); }
+.ci-calif-card { background: var(--surface); }
+.ci-calif-icon { background: var(--bg); }
+.ci-calif-bar { background: var(--border); }
