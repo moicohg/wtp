@@ -36,8 +36,11 @@ Deno.serve(async (req: Request) => {
     code?: string;
     // Modo manual (sin SDK de Facebook)
     access_token?: string;
-    // Datos del canal — siempre requeridos
-    phone_number_id: string;
+    // Coexistencia: el número ya vive en la app de WhatsApp Business. Meta solo devuelve el
+    // waba_id; el número se resuelve aquí y NO se registra (seguiría sin poder usar la app).
+    coexistence?: boolean;
+    // Datos del canal — phone_number_id solo es opcional en coexistencia
+    phone_number_id?: string;
     waba_id: string;
     vendor_name?: string;
     system_prompt?: string;
@@ -52,9 +55,11 @@ Deno.serve(async (req: Request) => {
     return json({ error: 'Payload inválido' }, 400);
   }
 
-  const { phone_number_id, waba_id, vendor_name, system_prompt, ai_provider, ai_api_key, ai_model } = body;
+  const { waba_id, vendor_name, system_prompt, ai_provider, ai_api_key, ai_model } = body;
+  const coexistence = body.coexistence === true && !!body.code;
+  let phone_number_id = body.phone_number_id ?? '';
 
-  if (!phone_number_id || !waba_id) {
+  if (!waba_id || (!phone_number_id && !coexistence)) {
     return json({ error: 'Faltan phone_number_id y/o waba_id' }, 400);
   }
 
@@ -96,6 +101,29 @@ Deno.serve(async (req: Request) => {
     accessToken = longData.access_token ?? shortData.access_token;
   } else {
     return json({ error: 'Se requiere "code" (OAuth) o "access_token" (manual)' }, 400);
+  }
+
+  // ── Coexistencia: resolver el número de la cuenta recién conectada ──────────
+
+  if (coexistence && !phone_number_id) {
+    try {
+      const numsResp = await fetch(
+        `https://graph.facebook.com/${GRAPH_VERSION}/${waba_id}/phone_numbers?fields=id,display_phone_number,is_on_biz_app,platform_type`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      const nums = await numsResp.json();
+      const list: Array<{ id: string; is_on_biz_app?: boolean }> = nums.data ?? [];
+      const onApp = list.filter((n) => n.is_on_biz_app);
+      const pick = onApp.length === 1 ? onApp[0] : (list.length === 1 ? list[0] : null);
+      if (!pick) {
+        console.warn('[coexistencia] no se pudo elegir número', JSON.stringify(nums));
+        return json({ error: 'No se pudo identificar el número conectado en la cuenta de WhatsApp Business. Inténtalo de nuevo o conéctalo manualmente.', detail: nums.error ?? null }, 400);
+      }
+      phone_number_id = pick.id;
+    } catch (e) {
+      console.error('[coexistencia] error consultando números:', e);
+      return json({ error: 'No se pudo consultar el número conectado en Meta.' }, 502);
+    }
   }
 
   // ── Verificar que el token funciona y obtener el nombre del número ──────────
@@ -190,10 +218,11 @@ Deno.serve(async (req: Request) => {
     console.warn('WABA subscription error (no bloqueante):', e);
   }
 
-  // ── Registrar el número en Cloud API (solo Embedded Signup) ──────────────────
+  // ── Registrar el número en Cloud API (solo Embedded Signup de un número nuevo) ──
   // Un número recién agregado por Embedded Signup no envía ni recibe hasta que se
   // registra. En modo manual el número ya vino configurado desde el panel de Meta.
-  if (body.code) {
+  // En coexistencia NO se registra: el número sigue activo en la app de WhatsApp Business.
+  if (body.code && !coexistence) {
     if (!/^\d{6}$/.test(REGISTER_PIN)) {
       console.warn('META_REGISTER_PIN no configurado (6 dígitos): se omite el registro del número');
     } else {

@@ -157,7 +157,7 @@ async function sendMetaMessage(
 
 // ── Helpers (misma lógica que whatsapp-handler) ───────────────────────────────
 
-async function getOrCreateProspect(phone: string, vendorId: string): Promise<Prospect> {
+async function getOrCreateProspect(phone: string, vendorId: string, iaEnabled = true): Promise<Prospect> {
   const { data: existing } = await supabase
     .from('prospects')
     .select('*')
@@ -169,7 +169,7 @@ async function getOrCreateProspect(phone: string, vendorId: string): Promise<Pro
 
   const { data: created, error } = await supabase
     .from('prospects')
-    .insert({ phone, vendor_id: vendorId, conversation_step: 'paso_0' })
+    .insert({ phone, vendor_id: vendorId, conversation_step: 'paso_0', ...(iaEnabled ? {} : { ia_enabled: false }) })
     .select('*')
     .single();
 
@@ -293,6 +293,55 @@ async function hasValidSignature(rawBody: string, header: string | null): Promis
   return diff === 0;
 }
 
+// Espejo de los mensajes escritos desde la app de WhatsApp Business (coexistencia). Se guardan como
+// respuesta humana (role assistant, sin by_ai/by_automation) para que el chat y la alerta de lead
+// sin respuesta los vean. Si el dueño le escribe primero a alguien, ese lead nace con la IA apagada:
+// es una conversación suya y el bot no debe responder encima.
+async function handleMessageEchoes(value: Record<string, unknown>): Promise<void> {
+  const phoneNumberId = (value.metadata as Record<string, unknown> | undefined)?.phone_number_id as string | undefined;
+  const echoes = (value.message_echoes as Array<Record<string, unknown>>) ?? [];
+  if (!phoneNumberId || !echoes.length) return;
+
+  const { data: vendor } = await supabase
+    .from('vendors')
+    .select('id')
+    .eq('meta_phone_number_id', phoneNumberId)
+    .eq('channel_type', 'meta')
+    .single();
+  if (!vendor) {
+    console.error('[echo] vendor no encontrado para phone_number_id:', phoneNumberId);
+    return;
+  }
+
+  for (const echo of echoes) {
+    try {
+      const to = String(echo.to ?? '').replace(/\D/g, '');
+      const text = String(((echo.text as Record<string, unknown> | undefined)?.body as string) ?? '').trim();
+      if (!to || echo.type !== 'text' || !text) {
+        console.log('[echo] ignorado (no es texto o sin destinatario):', echo.type);
+        continue;
+      }
+      const prospect = await getOrCreateProspect(to, vendor.id, false);
+
+      // Meta puede reentregar el aviso: no duplicar el mismo texto en el último minuto.
+      const since = new Date(Date.now() - 60_000).toISOString();
+      const { data: dup } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('prospect_id', prospect.id)
+        .eq('role', 'assistant')
+        .eq('content', text)
+        .gte('created_at', since)
+        .limit(1);
+      if (dup?.length) continue;
+
+      await supabase.from('messages').insert({ prospect_id: prospect.id, role: 'assistant', content: text });
+    } catch (e) {
+      console.error('[echo] error guardando mensaje:', e);
+    }
+  }
+}
+
 // ── Handler principal ────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -351,6 +400,15 @@ Deno.serve(async (req: Request) => {
     const changes = (entry.changes as Array<Record<string, unknown>>) ?? [];
 
     for (const change of changes) {
+      // Coexistencia: lo que el dueño escribe desde la app de WhatsApp Business en su celular.
+      if (change.field === 'smb_message_echoes') {
+        await handleMessageEchoes(change.value as Record<string, unknown>);
+        continue;
+      }
+      if (change.field === 'account_update') {
+        console.log('[account_update]', JSON.stringify(change.value ?? {}).slice(0, 300));
+        continue;
+      }
       if (change.field !== 'messages') continue;
 
       const value    = change.value as Record<string, unknown>;

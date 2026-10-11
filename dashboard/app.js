@@ -604,6 +604,7 @@ const vendorMetaWabaIdInput = document.getElementById('vf-meta-waba-id');
 const vendorMetaAccessTokenInput = document.getElementById('vf-meta-access-token');
 const vendorFbConnect = document.getElementById('vf-fb-connect');
 const vendorFbConnectBtn = document.getElementById('vf-fb-connect-btn');
+const vendorFbCoexistBtn = document.getElementById('vf-fb-coexist-btn');
 const FB_CONNECT_ENABLED = Boolean(META_APP_ID && META_CONFIG_ID);
 
 const VENDOR_CONNECTION_COPY = {
@@ -4906,7 +4907,9 @@ function isFacebookOrigin(origin) {
 }
 
 // Resuelve con { code, phone_number_id, waba_id }; rechaza si el usuario cancela o Meta falla.
-function runEmbeddedSignup() {
+// Con coexistence=true el número ya vive en la app de WhatsApp Business: Meta solo devuelve el
+// waba_id (el número lo resuelve meta-exchange) y el número sigue funcionando en el teléfono.
+function runEmbeddedSignup(coexistence = false) {
   return new Promise((resolve, reject) => {
     let code = null;
     let session = null;
@@ -4939,10 +4942,18 @@ function runEmbeddedSignup() {
         return settle(reject, new Error(`Meta reportó un error: ${msg.data.error_message}`));
       }
       if (String(msg.event ?? '').startsWith('FINISH')) {
-        if (!msg.data?.phone_number_id || !msg.data?.waba_id) {
-          return settle(reject, new Error('No elegiste un número de WhatsApp Business. Vuelve a intentarlo y selecciona uno.'));
+        if (coexistence) {
+          if (!msg.data?.waba_id) {
+            return settle(reject, new Error('Meta no devolvió la cuenta de WhatsApp Business. Vuelve a intentarlo.'));
+          }
+          session = { waba_id: msg.data.waba_id, coexistence: true };
+          if (msg.data.phone_number_id) session.phone_number_id = msg.data.phone_number_id;
+        } else {
+          if (!msg.data?.phone_number_id || !msg.data?.waba_id) {
+            return settle(reject, new Error('No elegiste un número de WhatsApp Business. Vuelve a intentarlo y selecciona uno.'));
+          }
+          session = { phone_number_id: msg.data.phone_number_id, waba_id: msg.data.waba_id };
         }
-        session = { phone_number_id: msg.data.phone_number_id, waba_id: msg.data.waba_id };
         tryFinish();
       }
     }
@@ -4962,13 +4973,15 @@ function runEmbeddedSignup() {
         config_id: META_CONFIG_ID,
         response_type: 'code',
         override_default_response_type: true,
-        extras: { setup: {} },
+        extras: coexistence
+          ? { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' }
+          : { setup: {}, sessionInfoVersion: '3' },
       }
     );
   });
 }
 
-async function connectVendorWithFacebook() {
+async function connectVendorWithFacebook(coexistence = false) {
   const fd = new FormData(vendorForm);
   const name = fd.get('name')?.toString().trim();
   const setStatus = (text, cls = '') => {
@@ -4984,9 +4997,10 @@ async function connectVendorWithFacebook() {
   }
 
   vendorFbConnectBtn.disabled = true;
+  vendorFbCoexistBtn.disabled = true;
   setStatus('Esperando la autorización de Facebook…');
   try {
-    const session = await runEmbeddedSignup();
+    const session = await runEmbeddedSignup(coexistence);
     setStatus('Conectando el canal…');
     await callMetaExchange(fd, name, session);
   } catch (err) {
@@ -4994,6 +5008,7 @@ async function connectVendorWithFacebook() {
     return;
   } finally {
     vendorFbConnectBtn.disabled = false;
+    vendorFbCoexistBtn.disabled = false;
   }
   await onVendorCreated();
 }
@@ -5850,7 +5865,8 @@ vendorOverlay.addEventListener('click', (ev) => {
 });
 vendorForm.addEventListener('submit', createVendor);
 vendorConnectionType.addEventListener('change', updateVendorFormConnectionType);
-vendorFbConnectBtn.addEventListener('click', connectVendorWithFacebook);
+vendorFbConnectBtn.addEventListener('click', () => connectVendorWithFacebook(false));
+vendorFbCoexistBtn.addEventListener('click', () => connectVendorWithFacebook(true));
 
 document.getElementById('create-agent-btn').addEventListener('click', () => openAgentModal());
 document.getElementById('create-agent-btn-config').addEventListener('click', () => openAgentModal());

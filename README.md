@@ -139,6 +139,12 @@ El topbar tiene un selector rápido para que el vendedor cambie su propio estado
 ### Profesional (Meta oficial)
 `meta-exchange` crea el canal con un token manual o con el `code` de OAuth de **Continuar con Facebook** (Embedded Signup). Ese botón requiere `META_APP_ID` y `META_CONFIG_ID` en [dashboard/app.js](dashboard/app.js); vacíos, queda solo la conexión manual. Al conectar con Facebook se registra el número en Cloud API con `META_REGISTER_PIN`.
 
+**Dos botones de Facebook** en el modal Agregar canal:
+- **Conectar un número nuevo con Facebook**: Embedded Signup normal. El número no debe estar activo en WhatsApp.
+- **Conectar mi número actual de WhatsApp Business** (*coexistencia*): `FB.login` con `featureType: 'whatsapp_business_app_onboarding'`. El número sigue funcionando en la app del teléfono y a la vez en el CRM. Meta solo devuelve el `waba_id` (evento `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING`); `meta-exchange` resuelve el número con `GET /{waba_id}/phone_numbers` y **no** lo registra con el PIN. Requiere la app WhatsApp Business 2.24.17+ y los campos de webhook `smb_message_echoes` y `account_update` suscritos en la consola de Meta (WhatsApp Business Account). Los mensajes que el dueño escribe desde el celular llegan por `smb_message_echoes` y `meta-webhook` los guarda como respuesta humana; si el dueño le escribe primero a alguien, ese lead se crea con la IA apagada.
+- Limitaciones de Meta en coexistencia: los grupos no se sincronizan, las listas de difusión pasan a solo lectura, no hay llamadas ni herramientas de negocio por el API, se desvinculan los dispositivos vinculados (hasta 4 se pueden volver a vincular) y el ritmo es de 20 mensajes por segundo.
+- **Pendiente (Fase B):** la sincronización de contactos (`smb_app_state_sync`) y de historial (`history`, hasta 180 días) se pide una sola vez con `POST /{phone_number_id}/smb_app_data` dentro de las 24 h posteriores a conectar; hoy no se pide, así que ese historial no se importa.
+
 ---
 
 ## Agenda inteligente
