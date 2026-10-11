@@ -3491,11 +3491,11 @@ function renderTable() {
     .map(
       (p) => `
       <tr data-id="${p.id}">
-        <td>${escapeHtml(p.nombre) || '<span style="color:var(--text-dim)">Sin nombre</span>'}</td>
+        <td><span class="lead-name"><span class="lead-avatar" style="background:${colorFor(p.id)}">${p.nombre ? escapeHtml(initials(p.nombre)) : '#'}</span>${escapeHtml(p.nombre) || '<span style="color:var(--text-dim)">Sin nombre</span>'}</span></td>
         <td>${escapeHtml(p.phone)}</td>
-        <td>${p.score}</td>
+        <td><span class="lead-score lead-score-${p.label}">${p.score}</span></td>
         <td><span class="badge badge-${p.label}">${p.label}</span></td>
-        <td>${p.prioridad}</td>
+        <td><span class="lead-prio lead-prio-${escapeHtml(String(p.prioridad ?? ''))}">${escapeHtml(String(p.prioridad ?? ''))}</span></td>
         <td>${escapeHtml(p.zona) || '—'}</td>
         <td>${fmtMoney(p.presupuesto, p.presupuesto_moneda)}</td>
         <td>${escapeHtml(p.conversation_step)}</td>
