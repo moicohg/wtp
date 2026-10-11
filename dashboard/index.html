@@ -1034,10 +1034,13 @@
         </label>
 
         <div id="vf-evolution-fields" class="field-group">
-          <label>
-            Teléfono del asesor <span class="hint">(recibe notificación de leads calificados)</span>
-            <input name="phone_number" type="text" placeholder="51999999999" />
-          </label>
+          <details class="manual-connect">
+            <summary>Avisar a un asesor (opcional)</summary>
+            <label>
+              Teléfono del asesor <span class="hint">(recibe un WhatsApp cuando la IA califica un lead)</span>
+              <input name="phone_number" type="text" placeholder="51999999999" autocomplete="off" />
+            </label>
+          </details>
         </div>
 
         <div id="vf-meta-fields" class="field-group" hidden>
@@ -1047,10 +1050,13 @@
             <button type="button" class="btn btn-facebook" id="vf-fb-connect-btn">Conectar un número nuevo con Facebook</button>
             <p class="hint">Para un número que aún no está en WhatsApp: autoriza con Facebook, verifica el número y el canal se crea solo, sin pegar tokens.</p>
           </div>
-          <label>
-            Teléfono del asesor <span class="hint">(recibe notificación de leads calificados)</span>
-            <input name="meta_phone_number" type="text" placeholder="51999999999" autocomplete="off" />
-          </label>
+          <details class="manual-connect">
+            <summary>Avisar a un asesor (opcional)</summary>
+            <label>
+              Teléfono del asesor <span class="hint">(recibe un WhatsApp cuando la IA califica un lead)</span>
+              <input name="meta_phone_number" type="text" placeholder="51999999999" autocomplete="off" />
+            </label>
+          </details>
           <details id="vf-manual" class="manual-connect">
             <summary>Conectar manualmente con un token (avanzado)</summary>
             <label>
