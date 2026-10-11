@@ -1064,6 +1064,46 @@ select, input[type="search"], input[type="text"], input[type="password"], textar
 .fb-connect .hint { margin: 0; color: var(--text-dim); font-size: 12.5px; }
 .fb-connect-title { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); }
 
+/* Selector del tipo de conexión */
+.conn-type-field { display: flex; flex-direction: column; gap: 8px; }
+.conn-type-label { font-size: 13px; font-weight: 500; color: var(--text); }
+.conn-type-field .hint { font-size: 12.5px; color: var(--text-dim); }
+.conn-type { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.conn-card {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left; font: inherit; cursor: pointer;
+  padding: 14px 14px 14px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text);
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease;
+}
+.conn-card:hover { border-color: var(--border-hover); box-shadow: 0 6px 18px rgba(15, 23, 42, .07); transform: translateY(-1px); }
+.conn-card:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.conn-card.is-selected {
+  border-color: transparent;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box, linear-gradient(135deg, #0d6b60, #1fb89f) border-box;
+  box-shadow: 0 8px 22px rgba(18, 140, 126, .16);
+}
+.conn-card.is-selected::after {
+  content: ''; position: absolute; inset: 0; border-radius: 12px; pointer-events: none;
+  background: linear-gradient(135deg, rgba(18, 140, 126, .09), transparent 60%);
+}
+.conn-card-check {
+  position: absolute; top: 10px; right: 10px; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--border-hover); background: var(--surface);
+  transition: background .16s ease, border-color .16s ease;
+}
+.conn-card.is-selected .conn-card-check {
+  border-color: transparent; background: linear-gradient(135deg, #0d6b60, #1fb89f);
+}
+.conn-card.is-selected .conn-card-check::after {
+  content: ''; position: absolute; inset: 0; background: #fff;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5.5 10.4l3 3 6-6.2' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5.5 10.4l3 3 6-6.2' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.conn-card-icon { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; color: #fff; box-shadow: 0 5px 12px rgba(15, 23, 42, .14); }
+.conn-card-icon-qr { background: linear-gradient(135deg, #0d6b60, #1fb89f); }
+.conn-card-icon-meta { background: linear-gradient(135deg, #1457c9, #4f8dff); }
+.conn-card-title { font-size: 14.5px; font-weight: 700; margin-top: 2px; }
+.conn-card-desc { font-size: 12.5px; color: var(--text-dim); line-height: 1.35; }
+@media (max-width: 480px) { .conn-type { grid-template-columns: 1fr; } }
+
 /* Tarjetas de conexión con Facebook */
 .fb-option {
   --opt-a: #0d6b60; --opt-b: #1fb89f; --opt-tint: rgba(18, 140, 126, .08);

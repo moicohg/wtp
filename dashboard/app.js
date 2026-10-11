@@ -637,6 +637,12 @@ function updateVendorFormConnectionType() {
   vendorMetaAccessTokenInput.required = manualMode;
   vendorSubmitBtn.hidden = isMeta && !manualMode;
 
+  document.querySelectorAll('.conn-card').forEach((card) => {
+    const on = card.dataset.type === type;
+    card.classList.toggle('is-selected', on);
+    card.setAttribute('aria-checked', String(on));
+  });
+
   const copy = VENDOR_CONNECTION_COPY[type] ?? VENDOR_CONNECTION_COPY.evolution;
   vendorConnectionHint.textContent = isMeta && FB_CONNECT_ENABLED
     ? 'Conexión oficial de WhatsApp Business. Elige una de las dos opciones con Facebook; no necesitas pegar ningún token.'
@@ -5872,6 +5878,13 @@ vendorOverlay.addEventListener('click', (ev) => {
 });
 vendorForm.addEventListener('submit', createVendor);
 vendorConnectionType.addEventListener('change', updateVendorFormConnectionType);
+document.querySelectorAll('.conn-card').forEach((card) => {
+  card.addEventListener('click', () => {
+    if (vendorConnectionType.value === card.dataset.type) return;
+    vendorConnectionType.value = card.dataset.type;
+    vendorConnectionType.dispatchEvent(new Event('change'));
+  });
+});
 vendorManual.addEventListener('toggle', updateVendorFormConnectionType);
 vendorFbConnectBtn.addEventListener('click', () => connectVendorWithFacebook(false));
 vendorFbCoexistBtn.addEventListener('click', () => connectVendorWithFacebook(true));
