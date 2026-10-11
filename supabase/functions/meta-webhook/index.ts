@@ -278,6 +278,21 @@ function derivePriority(label: string | null): string {
   return 'NINGUNA';
 }
 
+async function hasValidSignature(rawBody: string, header: string | null): Promise<boolean> {
+  const secret = Deno.env.get('META_APP_SECRET');
+  if (!secret || !header?.startsWith('sha256=')) return false;
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  );
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody)));
+  const expected = Array.from(mac, (b) => b.toString(16).padStart(2, '0')).join('');
+  const received = header.slice('sha256='.length);
+  if (received.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ received.charCodeAt(i);
+  return diff === 0;
+}
+
 // ── Handler principal ────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -301,9 +316,22 @@ Deno.serve(async (req: Request) => {
     return new Response('Method Not Allowed', { status: 405 });
   }
 
+  const rawBody = await req.text();
+
+  // Meta firma cada POST con HMAC-SHA256 del cuerpo y el App Secret. Con
+  // META_SIGNATURE_MODE=enforce se rechaza lo que no coincide; sin ese secreto solo se
+  // registra el aviso (para comprobar con tráfico real que META_APP_SECRET es el correcto).
+  if (!(await hasValidSignature(rawBody, req.headers.get('x-hub-signature-256')))) {
+    if (Deno.env.get('META_SIGNATURE_MODE') === 'enforce') {
+      console.error('[POST] firma inválida — rechazado');
+      return new Response('Unauthorized', { status: 401 });
+    }
+    console.warn('[POST] firma inválida o ausente (modo registro: se procesa igual)');
+  }
+
   let body: Record<string, unknown>;
   try {
-    body = await req.json();
+    body = JSON.parse(rawBody);
   } catch {
     console.error('[POST] body parse error');
     return new Response('Bad Request', { status: 400 });
