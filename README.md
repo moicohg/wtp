@@ -53,7 +53,7 @@ wtp/
 ├── dashboard/                  Panel web (se sirve tal cual, sin build)
 │   ├── index.html              Todas las vistas, modales y la pantalla de login
 │   ├── app.js                  Lógica completa del panel (~6.900 líneas)
-│   ├── style.css               Estilos
+│   ├── style.css               Estilos (el acabado con degradados de Canales, Dashboard, Leads y Agenda va al final, acotado por `#view-…` para no afectar otras vistas)
 │   └── privacidad.html · terminos.html · eliminar-datos.html   Páginas públicas que exige Meta
 ├── supabase/
 │   ├── config.toml             project_id + verify_jwt de los webhooks y de purge-media
@@ -122,7 +122,7 @@ El topbar tiene un selector rápido para que el vendedor cambie su propio estado
 
 ## Conectar un canal de WhatsApp
 
-**Agregar canal** (Canales) ofrece dos tipos. El tope de canales de la empresa se aplica a ambos.
+**Agregar canal** (Canales) ofrece dos tipos, elegidos con dos tarjetas (Simple QR y Profesional); por dentro sigue existiendo el `<select id="vf-connection-type">` oculto, del que dependen el resto del formulario y `createVendor`. El tope de canales de la empresa se aplica a ambos. El teléfono del asesor (aviso de lead calificado) va en un bloque plegado opcional "Avisar a un asesor".
 
 ### Simple (QR) — Evolution API
 1. El vendedor escribe el nombre del canal y pulsa **Crear canal y generar QR**.
@@ -137,9 +137,9 @@ El topbar tiene un selector rápido para que el vendedor cambie su propio estado
 > Limitación: una empresa con un solo canal QR no recibe el WhatsApp cuando ese canal cae (no hay otro desde el cual enviar); solo ve el banner. Meta no sirve de reemplazo: solo permite texto libre dentro de las 24 h posteriores a un mensaje del cliente.
 
 ### Profesional (Meta oficial)
-`meta-exchange` crea el canal con un token manual o con el `code` de OAuth de **Continuar con Facebook** (Embedded Signup). Ese botón requiere `META_APP_ID` y `META_CONFIG_ID` en [dashboard/app.js](dashboard/app.js); vacíos, queda solo la conexión manual. Al conectar con Facebook se registra el número en Cloud API con `META_REGISTER_PIN`.
+`meta-exchange` crea el canal con un token manual o con el `code` de OAuth de **Continuar con Facebook** (Embedded Signup). Los botones de Facebook requieren `META_APP_ID` y `META_CONFIG_ID` en [dashboard/app.js](dashboard/app.js); vacíos, queda solo la conexión manual, que va plegada en "Conectar manualmente con un token (avanzado)" (sin Facebook disponible se muestra abierta). Al conectar con Facebook se registra el número en Cloud API con `META_REGISTER_PIN`.
 
-**Dos botones de Facebook** en el modal Agregar canal:
+**Dos tarjetas de Facebook** en el modal Agregar canal (cada una con su botón):
 - **Conectar un número nuevo con Facebook**: Embedded Signup normal. El número no debe estar activo en WhatsApp.
 - **Conectar mi número actual de WhatsApp Business** (*coexistencia*): `FB.login` con `featureType: 'whatsapp_business_app_onboarding'`. El número sigue funcionando en la app del teléfono y a la vez en el CRM. Meta solo devuelve el `waba_id` (evento `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING`); `meta-exchange` resuelve el número con `GET /{waba_id}/phone_numbers` y **no** lo registra con el PIN. Requiere la app WhatsApp Business 2.24.17+ y los campos de webhook `smb_message_echoes` y `account_update` suscritos en la consola de Meta (WhatsApp Business Account). Los mensajes que el dueño escribe desde el celular llegan por `smb_message_echoes` y `meta-webhook` los guarda como respuesta humana; si el dueño le escribe primero a alguien, ese lead se crea con la IA apagada.
 - Limitaciones de Meta en coexistencia: los grupos no se sincronizan, las listas de difusión pasan a solo lectura, no hay llamadas ni herramientas de negocio por el API, se desvinculan los dispositivos vinculados (hasta 4 se pueden volver a vincular) y el ritmo es de 20 mensajes por segundo.
@@ -303,7 +303,7 @@ Al crear una empresa, un trigger siembra los roles "Administrador" (sistema) y "
 | Función | Quién la llama | Auth | Qué hace |
 |---|---|---|---|
 | `whatsapp-handler` | Evolution API (webhook, `verify_jwt=true`) | JWT en el gateway; escribe con service_role | Mensajes entrantes: crea el prospecto, guarda texto y adjuntos, revisa topes, entiende audio/imagen, llama a la IA, detecta citas y responde. También procesa `connection.update` (estado de la sesión y aviso de caída). Resuelve el número real cuando WhatsApp usa LID (`remoteJidAlt`). Ignora mensajes propios y grupos |
-| `meta-webhook` | Meta Cloud API (webhook, `verify_jwt=false`) | verificación `hub.verify_token` | Igual para canales Meta (texto): topes del plan y detección de citas. No recibe adjuntos todavía |
+| `meta-webhook` | Meta Cloud API (webhook, `verify_jwt=false`) | verificación `hub.verify_token` y firma `X-Hub-Signature-256` | Igual para canales Meta (texto): topes del plan y detección de citas. También refleja los mensajes escritos desde la app de WhatsApp Business (`smb_message_echoes`, coexistencia). No recibe adjuntos todavía |
 | `evolution-connect` | Panel (canales QR) | sesión + `config.manage_channels` | `create` (canal + instancia + QR), `status` (¿escaneado? o QR fresco) y `delete` |
 | `send-message` | Panel (chat) | sesión + acceso al chat | Envía texto o adjunto por Evolution o Meta y guarda el mensaje como `assistant` |
 | `admin-users` | Panel (Configuración, Empresas y Canales) | sesión; la mayoría exige `users.manage_users` o super-admin | `create_organization`, `list_organizations` (con consumo), `get_usage` (administrador, su propia empresa), `set_organization_active`, `set_organization_limits` (canales, vendedores, IA, archivos, vencimiento), `create_user`, `update_user`, `reset_password`, `set_active`, `delete_user` |
@@ -358,6 +358,7 @@ Secrets de las Edge Functions. Configurar con `supabase secrets set --env-file .
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` | Clientes de Supabase (los provee la plataforma). La clave anon también viaja en las cabeceras del webhook de Evolution |
 | `EVOLUTION_API_URL`, `EVOLUTION_API_KEY` | Servidor de Evolution API (la API key es la `AUTHENTICATION_API_KEY` global; v2.x). Sin URL ni key no funcionan ni el alta de canales QR ni el envío por QR |
 | `META_APP_ID`, `META_APP_SECRET`, `META_VERIFY_TOKEN` | Canal Meta Cloud API |
+| `META_SIGNATURE_MODE` | `enforce` hace que `meta-webhook` rechace (401) los POST cuya firma `X-Hub-Signature-256` (HMAC-SHA256 del cuerpo con `META_APP_SECRET`) no coincida. Sin él solo registra el aviso `firma inválida o ausente` y procesa igual: se deja así hasta confirmar en los logs, con tráfico real, que `META_APP_SECRET` es el de la app |
 | `META_REGISTER_PIN` | PIN de 6 dígitos con el que `meta-exchange` registra el número al conectar con "Continuar con Facebook". Sin él se omite el registro |
 | `OPENAI_API_KEY` | `product-autocomplete` y `catalog-analyze-prompt` (clave de la plataforma; la IA de cada canal usa la suya) |
 | `BURST_WAIT_MS` | Opcional. Espera en milisegundos para agrupar mensajes en ráfaga (6000 por defecto; 0 la desactiva) |
@@ -479,7 +480,7 @@ Pendiente o solo definido:
 - **Permisos sin UI que gatear**: `leads.create_contacts`, `messaging.send_broadcasts`, `messaging.view_broadcasts`, `messaging.manage_templates`, `config.migrate_channels`.
 - **Vincular un agente existente a un login**: `admin-users` acepta `agent_id`, pero el panel no ofrece el botón.
 - **Desactivar el registro público** en Supabase Auth ("Allow new users to sign up") para que solo `admin-users` cree cuentas.
-- **Meta (Facebook Login)**: el App Review de `whatsapp_business_messaging` y `whatsapp_business_management` quedó aprobado el 2026-10-10 y la app está en producción, con la URL de eliminación de datos apuntando a `eliminar-datos.html`. Falta probar la conexión de punta a punta con una cuenta sin rol en la app: al 2026-10-10 el diálogo de Facebook mostraba "Función no disponible". Meta también emitió una alerta urgente por funciones legacy de Graph API y el backend se subió a `GRAPH_VERSION = 'v25.0'`. El token de Meta caduca a los 60 días y falta la renovación programada.
+- **Meta (Facebook Login)**: App Review aprobado el 2026-10-10 (`whatsapp_business_messaging`, `whatsapp_business_management` y `public_profile` con acceso avanzado) y la app en producción. El login ya abre el asistente de WhatsApp con cuentas sin rol. Backend en Graph `v25.0` y webhook con validación de firma en modo registro (pasar a `META_SIGNATURE_MODE=enforce` tras comprobar los logs). **Coexistencia bloqueada por Meta**: aunque el panel envía `featureType: whatsapp_business_app_onboarding` (comprobado en la URL del diálogo), el popup muestra el flujo de número nuevo y rechaza un número activo en la app (error #2494064); hay un caso abierto en Asistencia directa desde el 2026-10-11. Falta: respuesta de Meta, probar un número nuevo de punta a punta, Fase B del historial y la renovación programada del token (caduca a los 60 días).
 
 Sin verificar de punta a punta en producción:
 
