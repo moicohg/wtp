@@ -8,7 +8,7 @@ const META_APP_SECRET = Deno.env.get('META_APP_SECRET')!;
 // PIN de 6 dígitos con el que se registra cada número nuevo en Cloud API
 // (verificación en dos pasos). Sin él, el registro se omite.
 const REGISTER_PIN    = Deno.env.get('META_REGISTER_PIN') ?? '';
-const GRAPH_VERSION   = 'v20.0';
+const GRAPH_VERSION   = 'v25.0';
 
 const DEFAULT_MODEL: Record<string, string> = {
   anthropic: 'claude-sonnet-4-6',

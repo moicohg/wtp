@@ -66,7 +66,7 @@ interface AIReply {
 
 // ── Constantes ───────────────────────────────────────────────────────────────
 
-const GRAPH_VERSION = 'v20.0';
+const GRAPH_VERSION = 'v25.0';
 
 const DEFAULT_SYSTEM_PROMPT = `Eres Alia, asistente virtual de una agencia inmobiliaria. Tu único objetivo en esta conversación es calificar al prospecto en máximo 3 intercambios: saber si tiene presupuesto real, en qué zona busca y si puede comprar pronto. Eres cálida, profesional y directa. No eres un portal de búsqueda: no listes propiedades, no cotices sin asesor.
 

@@ -27,7 +27,7 @@ interface Prospect {
   handled_by_agent_id: string | null;
 }
 
-const GRAPH_VERSION = 'v20.0';
+const GRAPH_VERSION = 'v25.0';
 
 const EVOLUTION_API_URL = Deno.env.get('EVOLUTION_API_URL');
 const EVOLUTION_API_KEY = Deno.env.get('EVOLUTION_API_KEY');

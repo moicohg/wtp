@@ -8,7 +8,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 const EVOLUTION_API_URL = Deno.env.get('EVOLUTION_API_URL');
 const EVOLUTION_API_KEY = Deno.env.get('EVOLUTION_API_KEY');
-const GRAPH_VERSION = 'v20.0';
+const GRAPH_VERSION = 'v25.0';
 
 // Un paso que no pudo salir en tanto tiempo se omite (canal caído, ventana de 24 h de Meta…).
 const MAX_LATE_MS = 12 * 3600_000;

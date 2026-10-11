@@ -473,7 +473,7 @@ Pendiente o solo definido:
 - **Permisos sin UI que gatear**: `leads.create_contacts`, `messaging.send_broadcasts`, `messaging.view_broadcasts`, `messaging.manage_templates`, `config.migrate_channels`.
 - **Vincular un agente existente a un login**: `admin-users` acepta `agent_id`, pero el panel no ofrece el botón.
 - **Desactivar el registro público** en Supabase Auth ("Allow new users to sign up") para que solo `admin-users` cree cuentas.
-- **Meta (Facebook Login)**: el App Review de `whatsapp_business_messaging` y `whatsapp_business_management` quedó aprobado el 2026-10-10 y la app está en producción, con la URL de eliminación de datos apuntando a `eliminar-datos.html`. Falta probar la conexión de punta a punta con una cuenta sin rol en la app: al 2026-10-10 el diálogo de Facebook mostraba "Función no disponible". Meta también emitió una alerta urgente por funciones legacy de Graph API y el backend sigue en `GRAPH_VERSION = 'v20.0'`. El token de Meta caduca a los 60 días y falta la renovación programada.
+- **Meta (Facebook Login)**: el App Review de `whatsapp_business_messaging` y `whatsapp_business_management` quedó aprobado el 2026-10-10 y la app está en producción, con la URL de eliminación de datos apuntando a `eliminar-datos.html`. Falta probar la conexión de punta a punta con una cuenta sin rol en la app: al 2026-10-10 el diálogo de Facebook mostraba "Función no disponible". Meta también emitió una alerta urgente por funciones legacy de Graph API y el backend se subió a `GRAPH_VERSION = 'v25.0'`. El token de Meta caduca a los 60 días y falta la renovación programada.
 
 Sin verificar de punta a punta en producción:
 
