@@ -605,6 +605,7 @@ const vendorMetaAccessTokenInput = document.getElementById('vf-meta-access-token
 const vendorFbConnect = document.getElementById('vf-fb-connect');
 const vendorFbConnectBtn = document.getElementById('vf-fb-connect-btn');
 const vendorFbCoexistBtn = document.getElementById('vf-fb-coexist-btn');
+const vendorManual = document.getElementById('vf-manual');
 const FB_CONNECT_ENABLED = Boolean(META_APP_ID && META_CONFIG_ID);
 
 const VENDOR_CONNECTION_COPY = {
@@ -628,12 +629,18 @@ function updateVendorFormConnectionType() {
   // El SDK se precarga para que FB.login corra dentro del clic (si no, el navegador bloquea el popup).
   if (isMeta && FB_CONNECT_ENABLED) loadFacebookSdk().catch(() => {});
 
-  vendorMetaPhoneNumberIdInput.required = isMeta;
-  vendorMetaWabaIdInput.required = isMeta;
-  vendorMetaAccessTokenInput.required = isMeta;
+  // Con Facebook disponible, el token manual queda plegado y el botón de enviar solo sirve para eso.
+  if (isMeta && !FB_CONNECT_ENABLED) vendorManual.open = true;
+  const manualMode = isMeta && (!FB_CONNECT_ENABLED || vendorManual.open);
+  vendorMetaPhoneNumberIdInput.required = manualMode;
+  vendorMetaWabaIdInput.required = manualMode;
+  vendorMetaAccessTokenInput.required = manualMode;
+  vendorSubmitBtn.hidden = isMeta && !manualMode;
 
   const copy = VENDOR_CONNECTION_COPY[type] ?? VENDOR_CONNECTION_COPY.evolution;
-  vendorConnectionHint.textContent = copy.hint;
+  vendorConnectionHint.textContent = isMeta && FB_CONNECT_ENABLED
+    ? 'Conexión oficial de WhatsApp Business. Elige una de las dos opciones con Facebook; no necesitas pegar ningún token.'
+    : copy.hint;
   vendorSubmitBtn.textContent = copy.submitLabel;
 }
 
@@ -5865,6 +5872,7 @@ vendorOverlay.addEventListener('click', (ev) => {
 });
 vendorForm.addEventListener('submit', createVendor);
 vendorConnectionType.addEventListener('change', updateVendorFormConnectionType);
+vendorManual.addEventListener('toggle', updateVendorFormConnectionType);
 vendorFbConnectBtn.addEventListener('click', () => connectVendorWithFacebook(false));
 vendorFbCoexistBtn.addEventListener('click', () => connectVendorWithFacebook(true));
 

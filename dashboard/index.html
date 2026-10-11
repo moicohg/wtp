@@ -1046,28 +1046,30 @@
             <p class="hint">Para el número que ya usas en la app de WhatsApp Business: sigue funcionando en tu teléfono y también en el CRM. Los grupos, las listas de difusión y las llamadas no pasan al CRM.</p>
             <button type="button" class="btn btn-facebook" id="vf-fb-connect-btn">Conectar un número nuevo con Facebook</button>
             <p class="hint">Para un número que aún no está en WhatsApp: autoriza con Facebook, verifica el número y el canal se crea solo, sin pegar tokens.</p>
-            <div class="fb-connect-or"><span>o conecta manualmente con un token</span></div>
           </div>
           <label>
             Teléfono del asesor <span class="hint">(recibe notificación de leads calificados)</span>
-            <input name="meta_phone_number" type="text" placeholder="51999999999" />
+            <input name="meta_phone_number" type="text" placeholder="51999999999" autocomplete="off" />
           </label>
-          <label>
-            Phone Number ID <span class="hint">(Meta for Developers → WhatsApp → API Setup)</span>
-            <input id="vf-meta-phone-number-id" name="meta_phone_number_id" type="text" placeholder="123456789012345" />
-          </label>
-          <label>
-            WhatsApp Business Account ID (WABA ID)
-            <input id="vf-meta-waba-id" name="meta_waba_id" type="text" placeholder="123456789012345" />
-          </label>
-          <label>
-            Access token permanente
-            <input id="vf-meta-access-token" name="meta_access_token" type="password" placeholder="EAAG…" autocomplete="off" />
-          </label>
-          <p class="hint">
-            Genera un token permanente desde tu Meta Business dashboard (System User con permiso
-            <code>whatsapp_business_messaging</code>) y pégalo aquí.
-          </p>
+          <details id="vf-manual" class="manual-connect">
+            <summary>Conectar manualmente con un token (avanzado)</summary>
+            <label>
+              Phone Number ID <span class="hint">(Meta for Developers → WhatsApp → API Setup)</span>
+              <input id="vf-meta-phone-number-id" name="meta_phone_number_id" type="text" placeholder="123456789012345" autocomplete="off" />
+            </label>
+            <label>
+              WhatsApp Business Account ID (WABA ID)
+              <input id="vf-meta-waba-id" name="meta_waba_id" type="text" placeholder="123456789012345" autocomplete="off" />
+            </label>
+            <label>
+              Access token permanente
+              <input id="vf-meta-access-token" name="meta_access_token" type="password" placeholder="EAAG…" autocomplete="off" />
+            </label>
+            <p class="hint">
+              Genera un token permanente desde tu Meta Business dashboard (System User con permiso
+              <code>whatsapp_business_messaging</code>) y pégalo aquí.
+            </p>
+          </details>
         </div>
 
         <label>
