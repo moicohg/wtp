@@ -1045,10 +1045,44 @@
 
         <div id="vf-meta-fields" class="field-group" hidden>
           <div id="vf-fb-connect" class="fb-connect" hidden>
-            <button type="button" class="btn btn-facebook" id="vf-fb-coexist-btn">Conectar mi número actual de WhatsApp Business</button>
-            <p class="hint">Para el número que ya usas en la app de WhatsApp Business: sigue funcionando en tu teléfono y también en el CRM. Los grupos, las listas de difusión y las llamadas no pasan al CRM.</p>
-            <button type="button" class="btn btn-facebook" id="vf-fb-connect-btn">Conectar un número nuevo con Facebook</button>
-            <p class="hint">Para un número que aún no está en WhatsApp: autoriza con Facebook, verifica el número y el canal se crea solo, sin pegar tokens.</p>
+            <div class="fb-connect-title">Elige cómo conectar tu WhatsApp</div>
+
+            <div class="fb-option fb-option-coexist">
+              <div class="fb-option-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M11 18.5h2"/><path d="M3 9.5a4 4 0 0 1 2.2-3.4"/><path d="M21 14.5a4 4 0 0 1-2.2 3.4"/></svg>
+              </div>
+              <div class="fb-option-body">
+                <div class="fb-option-head">
+                  <span class="fb-option-name">Mi número actual de WhatsApp Business</span>
+                  <span class="fb-badge">Coexistencia</span>
+                </div>
+                <p class="fb-option-desc">Conecta el número que ya usas en la app, sin cambiar de teléfono.</p>
+                <ul class="fb-option-points">
+                  <li>Sigue funcionando en tu app de WhatsApp Business</li>
+                  <li>El CRM y la IA responden desde el mismo número</li>
+                  <li>Los grupos, listas de difusión y llamadas no pasan al CRM</li>
+                </ul>
+                <button type="button" class="btn btn-fb-grad" id="vf-fb-coexist-btn">Conectar con Facebook</button>
+              </div>
+            </div>
+
+            <div class="fb-option fb-option-new">
+              <div class="fb-option-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M12 8.5v5"/><path d="M9.5 11h5"/></svg>
+              </div>
+              <div class="fb-option-body">
+                <div class="fb-option-head">
+                  <span class="fb-option-name">Un número nuevo</span>
+                  <span class="fb-badge">API oficial</span>
+                </div>
+                <p class="fb-option-desc">Para una línea que aún no está activa en WhatsApp.</p>
+                <ul class="fb-option-points">
+                  <li>Verificas el número por SMS o llamada</li>
+                  <li>El canal se crea solo, sin pegar tokens</li>
+                </ul>
+                <button type="button" class="btn btn-fb-grad" id="vf-fb-connect-btn">Conectar con Facebook</button>
+              </div>
+            </div>
           </div>
           <details class="manual-connect">
             <summary>Avisar a un asesor (opcional)</summary>
