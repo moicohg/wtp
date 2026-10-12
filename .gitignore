@@ -2,3 +2,4 @@ supabase/.temp/
 .env
 .env.local
 node_modules/
+facebook-datos.txt
