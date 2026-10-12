@@ -1143,7 +1143,10 @@ select, input[type="search"], input[type="text"], input[type="password"], textar
   background: linear-gradient(135deg, var(--opt-a), var(--opt-b)); box-shadow: 0 6px 14px color-mix(in srgb, var(--opt-a) 32%, transparent);
   transition: filter .15s ease, box-shadow .15s ease;
 }
-.btn-fb-grad:hover { filter: brightness(1.07); }
+.btn-fb-grad:hover, .btn-fb-grad:focus-visible {
+  filter: brightness(1.07); color: #fff; border: none;
+  background: linear-gradient(135deg, var(--opt-a), var(--opt-b));
+}
 .btn-fb-grad:disabled { opacity: .6; cursor: progress; }
 @media (max-width: 480px) { .fb-option { flex-direction: column; } }
 .manual-connect { border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 12px; }
