@@ -77,6 +77,7 @@ wtp/
 │   │   ├── purge-media/         Borrado diario de adjuntos viejos (lo llama pg_cron)
 │   │   ├── automation-runner/   Envía los pasos de las cadencias a los leads inscritos (lo llama pg_cron cada 5 min)
 │   │   ├── lead-alerts/         Avisos de lead calificado sin respuesta (lo llama pg_cron cada minuto)
+│   │   ├── metrics-alerts/      Resumen diario/semanal de métricas por WhatsApp (lo llama pg_cron a las 08:05 Lima)
 │   │   ├── product-autocomplete/    Generar catálogo de productos con IA
 │   │   └── catalog-analyze-prompt/  Detectar productos en el system prompt
 │   └── migrations/             Esquema completo (33 archivos), en orden cronológico
@@ -100,6 +101,7 @@ wtp/
 | Catálogo IA | Archivos que la IA puede mencionar, asignados a uno o más canales | `config.products` |
 | Leads | Tabla de prospectos por canal con KPIs y drawer de detalle | `leads.view` |
 | Automatización | Cadencias multi-día (plantilla, pasos, audiencia). Se pueden inscribir leads desde el chat (⚡) y el motor envía los pasos (ver [Cadencias](#cadencias)) | `messaging.manage_automations` |
+| Métricas | Embudo Leads → Venta con registro diario automático, vista diaria/semanal/mensual, metas, inversión y alertas (ver [Métricas](#métricas)) | `metrics.view` |
 | Disponibilidad | Estado en tiempo real de cada vendedor, historial y config de reparto de leads y alertas (ver [Reparto de leads y alertas](#reparto-de-leads-y-alertas)) | todos |
 | Configuración | Usuarios de la empresa y Roles con permisos | `users.manage_users` / `users.manage_roles` |
 | Empresas | Crear empresas, fijar su plan (límites y vencimiento), activarlas y ver su consumo | solo super-admin |
@@ -194,6 +196,28 @@ Cada aviso se marca en `prospects.alerted_agent_for` / `alerted_owner_for` (desd
 
 ---
 
+## Métricas
+
+Sección **Métricas** (módulo contratable `metricas`, permisos `metrics.view` y `metrics.manage`). Es el tablero de "Medición de Resultados" dentro del CRM: Leads → Responde → Agendó → Asistió → Separó → Venta, con % de conversión contra la etapa anterior, costo por unidad e inversión. Se ve en **Diario, Semanal o Mensual** (con flechas para moverse entre periodos) y por asesor.
+
+**El registro diario es automático.** `metrics_daily(p_org, p_from, p_to)` (función SQL `security invoker`) devuelve una fila por día (hora de Lima) y asesor, calculada de lo que el CRM ya guarda; semana y mes son sumas de esos días:
+
+| Etapa | Fuente |
+|---|---|
+| Leads | `prospects.created_at` |
+| Responde | primer mensaje del cliente (`messages.role = 'user'`) |
+| Agendó | `appointments` no canceladas, por fecha de creación |
+| Asistió | `appointments` en estado `completada`, por fecha de la cita |
+| Separó | primera vez que `etapa` pasó a `por_depositar` o `venta` (`prospect_stage_log`) |
+| Venta | primera vez que `etapa` pasó a `venta` |
+
+Cada etapa cuenta en el día en que ocurrió, así que en la vista diaria un % puede pasar de 100 (respuestas de leads de ayer); en semana y mes se estabiliza. El asesor es el responsable actual del lead (`handled_by_agent_id` o el asesor del canal). `prospect_stage_log` lo llena un trigger de `prospects.etapa`; los leads que ya estaban en esas etapas se cargaron con su `updated_at`. Lo que el CRM no puede saber se corrige con **ajustes manuales** (`metric_adjustments`, suman o restan en un día y etapa).
+
+- **Metas** (`metric_targets`, una fila por empresa): % mínimo por etapa. Valores iniciales: respuesta 50 %, agenda 15 % (los de la hoja original), asistencia 50 %, separación 30 %, venta 50 % (supuestos, editables). Estado por etapa: En meta (≥ meta), Cerca (≥ 80 % de la meta), Bajo, o Pocos datos si la etapa base tiene menos de `min_sample` casos.
+- **Inversión** (`metric_spend`): monto por mes; en semana o día se reparte por días. El costo por unidad solo se muestra en la vista de equipo.
+- **Visibilidad**: las políticas hacen el recorte; un vendedor solo ve el embudo de sus leads y sus ajustes, el administrador ve todo y filtra por asesor.
+- **Alertas** (`metrics-alerts`, 08:05 Lima): con `alert_enabled`, resumen del día anterior y, los lunes, de la semana anterior a los números de `availability_settings.alert_phones`; con `notify_agents`, también a cada asesor bajo la meta. Solo avisa si alguien está bajo; manda por canales QR conectados (Meta no permite texto libre fuera de 24 h).
+
 ## Cadencias
 
 Una cadencia (Automatización) es una lista de pasos `{day, hour, title, message}`. Se inscribe a un lead desde el botón ⚡ de su chat (`automation_enrollments`) y la Edge Function `automation-runner` envía cada paso por WhatsApp. pg_cron la llama cada 5 minutos y `due_automation_steps()` decide qué toca.
@@ -253,6 +277,8 @@ Tablas principales (todas en `public`):
 | `custom_fields` | Definición de campos personalizados (los valores van en `prospects.custom_field_values`) |
 | `automations` | Definición de automatizaciones y su audiencia |
 | `automation_enrollments` | Leads inscritos en una cadencia (`activa` / `completada` / `cancelada`). Tabla hija de `prospects`; una sola inscripción activa por lead y cadencia |
+| `prospect_stage_log` | Cuándo un lead pasó a `por_depositar` o `venta` (lo escribe un trigger de `prospects.etapa`). Tabla hija de `prospects` |
+| `metric_targets` / `metric_spend` / `metric_adjustments` | Metas por etapa y alertas (una fila por empresa), inversión mensual y ajustes manuales del embudo (ver [Métricas](#métricas)) |
 | `agent_status_log` | Historial de estados de cada vendedor |
 | `availability_settings` | Config de asignación inteligente y alertas, una fila por empresa |
 
@@ -312,6 +338,7 @@ Al crear una empresa, un trigger siembra los roles "Administrador" (sistema) y "
 | `purge-media` | pg_cron (`verify_jwt=false`) | cabecera `x-cron-secret` = `CRON_SECRET` | Borra los adjuntos con más de 90 días |
 | `automation-runner` | pg_cron cada 5 min (`verify_jwt=false`) | cabecera `x-cron-secret` = `CRON_SECRET` | Envía los pasos de las cadencias a los leads inscritos (ver [Cadencias](#cadencias)) |
 | `lead-alerts` | pg_cron cada minuto (`verify_jwt=false`) | cabecera `x-cron-secret` = `CRON_SECRET` | Avisa por WhatsApp de los leads calificados sin respuesta humana (ver [Reparto de leads y alertas](#reparto-de-leads-y-alertas)) |
+| `metrics-alerts` | pg_cron diario 13:05 UTC = 08:05 Lima (`verify_jwt=false`) | cabecera `x-cron-secret` = `CRON_SECRET` | Resumen de métricas del día anterior (y de la semana, los lunes) a los números de alerta y, si se activa, a cada asesor bajo la meta (ver [Métricas](#métricas)) |
 | `product-autocomplete` | Panel (Productos) | sesión + `config.products` | Genera productos con OpenAI a partir de una descripción del negocio |
 | `catalog-analyze-prompt` | Panel (Catálogo IA) | sesión + `config.products` | Detecta con OpenAI qué productos menciona el system prompt del canal |
 
@@ -344,6 +371,7 @@ pg_cron está activo (la migración `20260925000000_limites_ia_archivos.sql` cre
 | `purge-chat-media` | todos los días 08:00 UTC | `net.http_post` a `purge-media` con `x-cron-secret` (leído de Vault en cada ejecución) |
 | `lead-alerts` | cada minuto | Igual, hacia `lead-alerts` (migración `20260929000000_reparto_y_alertas.sql`) |
 | `automation-runner` | cada 5 minutos | Igual, hacia `automation-runner` (migración `20260930300000_motor_cadencias.sql`) |
+| `metrics-alerts` | todos los días 13:05 UTC | Igual, hacia `metrics-alerts` (migración `20261014000000_metricas.sql`) |
 
 El valor del secreto **no está en el repositorio**: se crea una vez con `select vault.create_secret('<valor>', 'cron_secret')` y el mismo valor va en el secret `CRON_SECRET` de las Edge Functions (`supabase secrets set CRON_SECRET=…`). Sin él, `purge-media` responde 401.
 
@@ -362,7 +390,7 @@ Secrets de las Edge Functions. Configurar con `supabase secrets set --env-file .
 | `META_REGISTER_PIN` | PIN de 6 dígitos con el que `meta-exchange` registra el número al conectar con "Continuar con Facebook". Sin él se omite el registro |
 | `OPENAI_API_KEY` | `product-autocomplete` y `catalog-analyze-prompt` (clave de la plataforma; la IA de cada canal usa la suya) |
 | `BURST_WAIT_MS` | Opcional. Espera en milisegundos para agrupar mensajes en ráfaga (6000 por defecto; 0 la desactiva) |
-| `CRON_SECRET` | Autentica a pg_cron ante `purge-media`, `lead-alerts` y `automation-runner` (mismo valor que el secreto `cron_secret` de Vault) |
+| `CRON_SECRET` | Autentica a pg_cron ante `purge-media`, `lead-alerts`, `automation-runner` y `metrics-alerts` (mismo valor que el secreto `cron_secret` de Vault) |
 
 El panel lleva `SUPABASE_URL` y la clave publicable hardcodeadas al inicio de [dashboard/app.js](dashboard/app.js). Ahí mismo van `META_APP_ID` y `META_CONFIG_ID` (públicos) para el botón "Continuar con Facebook".
 

@@ -14,6 +14,8 @@ export const ALL_PERMISSION_KEYS = [
   'agenda.manage',
   'analytics.dashboard',
   'analytics.ai_usage',
+  'metrics.view',
+  'metrics.manage',
   'config.manage_channels',
   'config.migrate_channels',
   'config.ai_settings',

@@ -62,6 +62,9 @@
         <button class="sidenav-item" data-section="disponibilidad" type="button">
           <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg></span>Disponibilidad
         </button>
+        <button class="sidenav-item" data-section="metricas" data-perm="metrics.view" type="button">
+          <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 16v-3"/><path d="M12 16V8"/><path d="M17 16v-6"/></svg></span>Métricas
+        </button>
         <button class="sidenav-item" data-section="empresas" id="nav-empresas" type="button" hidden>
           <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></span>Empresas
         </button>
@@ -255,6 +258,45 @@
           <aside class="ag-side">
             <div class="ag-card ag-pending" id="ag-pending"></div>
             <div class="ag-card" id="ag-day"></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ═══ Vista: Métricas (embudo comercial) ═══════════════════════════ -->
+      <section id="view-metricas" class="view" hidden>
+        <div class="ag-head">
+          <div>
+            <div class="ag-date" id="mx-range-label"></div>
+            <h2 class="ag-title">Métricas del embudo</h2>
+            <p class="ag-sub">Se registra solo desde el CRM: leads, respuestas, citas, visitas, separaciones y ventas.</p>
+          </div>
+          <div class="ag-head-actions">
+            <div class="filters mx-period" id="mx-period">
+              <button class="chip is-active" data-mx-period="day" type="button">Diario</button>
+              <button class="chip" data-mx-period="week" type="button">Semanal</button>
+              <button class="chip" data-mx-period="month" type="button">Mensual</button>
+            </div>
+            <div class="ag-daynav">
+              <button type="button" id="mx-prev" aria-label="Periodo anterior">‹</button>
+              <button type="button" id="mx-today">Hoy</button>
+              <button type="button" id="mx-next" aria-label="Periodo siguiente">›</button>
+            </div>
+            <select id="mx-agent" class="mx-select" aria-label="Asesor"></select>
+            <button type="button" class="btn" id="mx-refresh" title="Actualizar" aria-label="Actualizar">⟳</button>
+          </div>
+        </div>
+
+        <div class="ag-kpis" id="mx-kpis"></div>
+
+        <div class="ag-grid">
+          <div class="ag-main">
+            <div class="ag-card" id="mx-funnel"></div>
+            <div class="ag-card" id="mx-agents"></div>
+            <div class="ag-card" id="mx-days"></div>
+          </div>
+          <aside class="ag-side">
+            <div class="ag-card" id="mx-targets"></div>
+            <div class="ag-card" id="mx-adjust" data-perm="metrics.manage"></div>
           </aside>
         </div>
       </section>

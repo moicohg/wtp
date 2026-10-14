@@ -3,7 +3,7 @@
 // dashboard/app.js y del check de la migración 20260928000000_secciones_por_empresa.sql.
 
 export const ALL_SECTION_KEYS = [
-  'dashboard', 'agenda', 'bandeja-global', 'leads', 'productos', 'catalogo-ia', 'automatizacion', 'disponibilidad',
+  'dashboard', 'agenda', 'bandeja-global', 'leads', 'productos', 'catalogo-ia', 'automatizacion', 'disponibilidad', 'metricas',
 ] as const;
 
 // null = todas las secciones.

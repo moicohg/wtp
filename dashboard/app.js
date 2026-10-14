@@ -137,6 +137,13 @@ const PERMISSION_CATEGORIES = [
     ],
   },
   {
+    key: 'metrics', label: 'Métricas',
+    permissions: [
+      { key: 'metrics.view', label: 'Ver métricas', desc: 'Ver el embudo comercial y las metas (un vendedor solo ve el suyo).' },
+      { key: 'metrics.manage', label: 'Gestionar métricas', desc: 'Editar metas, inversión, ajustes manuales y alertas del embudo.' },
+    ],
+  },
+  {
     key: 'config', label: 'Configuración e integraciones',
     warn: 'Cambia la configuración de toda la empresa, no solo el trabajo del vendedor.',
     permissions: [
@@ -168,7 +175,7 @@ const ROLE_TEMPLATES = {
       'leads.view', 'leads.edit', 'leads.create_contacts', 'leads.manage_tags',
       'messaging.view_broadcasts', 'messaging.manage_automations',
       'agenda.view_priority_queue', 'agenda.manage',
-      'analytics.dashboard', 'analytics.ai_usage',
+      'analytics.dashboard', 'analytics.ai_usage', 'metrics.view',
     ],
   },
   supervisor: {
@@ -178,7 +185,7 @@ const ROLE_TEMPLATES = {
       'leads.view', 'leads.edit', 'leads.assign', 'leads.create_contacts', 'leads.manage_tags',
       'messaging.view_broadcasts', 'messaging.send_broadcasts', 'messaging.manage_templates', 'messaging.manage_automations',
       'agenda.view_priority_queue', 'agenda.manage',
-      'analytics.dashboard', 'analytics.ai_usage',
+      'analytics.dashboard', 'analytics.ai_usage', 'metrics.view',
     ],
   },
   administrador: {
@@ -736,6 +743,7 @@ const PLAN_SECTIONS = [
   { key: 'catalogo-ia', label: 'Catálogo IA', desc: 'Archivos que la IA envía a los clientes' },
   { key: 'automatizacion', label: 'Automatización', desc: 'Cadencias de mensajes' },
   { key: 'disponibilidad', label: 'Disponibilidad', desc: 'Estado del equipo y alertas' },
+  { key: 'metricas', label: 'Métricas', desc: 'Embudo diario, semanal y mensual con metas y alertas' },
 ];
 const PLAN_SECTION_KEYS = PLAN_SECTIONS.map((s) => s.key);
 
@@ -774,6 +782,7 @@ const SECTION_PERMS = {
   productos: ['config.products'],
   'catalogo-ia': ['config.products'],
   automatizacion: ['messaging.manage_automations'],
+  metricas: ['metrics.view'],
   configuracion: ['users.manage_users', 'users.manage_roles'],
 };
 
@@ -810,6 +819,7 @@ async function setSection(section) {
   const isCatalogo = section === 'catalogo-ia';
   const isAutomatizacion = section === 'automatizacion';
   const isDisponibilidad = section === 'disponibilidad';
+  const isMetricas = section === 'metricas';
   const isConfiguracion = section === 'configuracion';
   const isEmpresas = section === 'empresas';
   const isPlaceholder =
@@ -823,6 +833,7 @@ async function setSection(section) {
     !isCatalogo &&
     !isAutomatizacion &&
     !isDisponibilidad &&
+    !isMetricas &&
     !isConfiguracion &&
     !isEmpresas;
 
@@ -836,6 +847,7 @@ async function setSection(section) {
   viewCatalogo.hidden = !isCatalogo;
   viewAutomatizacion.hidden = !isAutomatizacion;
   viewDisponibilidad.hidden = !isDisponibilidad;
+  viewMetricas.hidden = !isMetricas;
   viewConfiguracion.hidden = !isConfiguracion;
   viewEmpresas.hidden = !isEmpresas;
   viewPlaceholder.hidden = !isPlaceholder;
@@ -867,6 +879,9 @@ async function setSection(section) {
   } else if (isDisponibilidad) {
     topbarTitle.textContent = 'Disponibilidad';
     await loadAvailability();
+  } else if (isMetricas) {
+    topbarTitle.textContent = 'Métricas';
+    await loadMetricas();
   } else if (isConfiguracion) {
     topbarTitle.textContent = 'Configuración';
     setConfigTab(can('users.manage_users') ? state.configTab : 'roles');
@@ -6971,6 +6986,416 @@ document.getElementById('ag-cal-grid').addEventListener('click', (ev) => {
 document.getElementById('ag-cal-close').addEventListener('click', () => (agCalOverlay.hidden = true));
 agCalOverlay.addEventListener('click', (ev) => {
   if (ev.target === agCalOverlay) agCalOverlay.hidden = true;
+});
+
+// ── Métricas (embudo comercial) ──────────────────────────────────────────────
+// Los conteos salen de la función SQL metrics_daily (un registro por día y asesor, calculado del CRM:
+// leads, mensajes, citas y cambios de etapa). Diario, semanal y mensual son solo sumas de esos días.
+// Cada etapa se mide contra la anterior y se compara con la meta de la empresa (metric_targets).
+
+const MX_STAGES = [
+  { key: 'leads', label: 'Leads' },
+  { key: 'responde', label: 'Responde llamada o WhatsApp', base: 'leads', target: 'respuesta_min', short: 'Respuesta', unit: 'respuestas' },
+  { key: 'agendo', label: 'Agendó visita', base: 'responde', target: 'agenda_min', short: 'Agenda', unit: 'agendas' },
+  { key: 'asistio', label: 'Asistió a visita o presentación', base: 'agendo', target: 'asistencia_min', short: 'Asistencia', unit: 'asistencias' },
+  { key: 'separo', label: 'Separó el inmueble', base: 'asistio', target: 'separacion_min', short: 'Separación', unit: 'separaciones' },
+  { key: 'ventas', label: 'Ventas efectivas', base: 'separo', target: 'venta_min', short: 'Venta', unit: 'ventas' },
+];
+const MX_TARGET_FIELDS = [
+  ['respuesta_min', 'Respuesta (sobre leads)'],
+  ['agenda_min', 'Agenda (sobre respuestas)'],
+  ['asistencia_min', 'Asistencia (sobre agendas)'],
+  ['separacion_min', 'Separación (sobre asistencias)'],
+  ['venta_min', 'Venta (sobre separaciones)'],
+];
+const MX_DEFAULT_TARGETS = {
+  respuesta_min: 50, agenda_min: 15, asistencia_min: 50, separacion_min: 30, venta_min: 50,
+  min_sample: 5, alert_enabled: false, alert_daily: true, alert_weekly: true, notify_agents: false,
+};
+const MX_STATUS_LABEL = { ok: 'En meta', warn: 'Cerca', bad: 'Bajo', na: 'Pocos datos' };
+
+const mxState = { period: 'day', anchor: null, agent: '', rows: [], targets: { ...MX_DEFAULT_TARGETS }, spend: {}, adjustments: [], token: 0 };
+
+const viewMetricas = document.getElementById('view-metricas');
+const mxAgentSel = document.getElementById('mx-agent');
+
+const mxMoney = (n) => `S/. ${n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const mxPct = (n) => (n == null ? '—' : `${n.toLocaleString('es-PE', { maximumFractionDigits: 1 })}%`);
+const mxDate = (d, opts) => new Date(`${d}T12:00:00Z`).toLocaleDateString('es-PE', { timeZone: 'UTC', ...opts });
+const mxDaysInMonth = (d) => new Date(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)), 0)).getUTCDate();
+
+function mxRange() {
+  const a = mxState.anchor;
+  if (mxState.period === 'week') {
+    const dow = new Date(`${a}T12:00:00Z`).getUTCDay();
+    const from = addDays(a, -((dow + 6) % 7));
+    return { from, to: addDays(from, 6) };
+  }
+  if (mxState.period === 'month') {
+    const from = `${a.slice(0, 7)}-01`;
+    return { from, to: `${a.slice(0, 7)}-${String(mxDaysInMonth(a)).padStart(2, '0')}` };
+  }
+  return { from: a, to: a };
+}
+
+// Rango que muestra la grilla por día: en la vista diaria, los 7 días que terminan en la fecha elegida.
+function mxGridRange() {
+  const r = mxRange();
+  return mxState.period === 'day' ? { from: addDays(r.to, -6), to: r.to } : r;
+}
+
+function mxRangeLabel() {
+  const r = mxRange();
+  if (mxState.period === 'day') return mxDate(r.from, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  if (mxState.period === 'week') return `Semana del ${mxDate(r.from, { day: 'numeric', month: 'short' })} al ${mxDate(r.to, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+  return mxDate(r.from, { month: 'long', year: 'numeric' });
+}
+
+const mxEmptyTotals = () => ({ leads: 0, responde: 0, agendo: 0, asistio: 0, separo: 0, ventas: 0 });
+
+function mxMatchesAgent(row) {
+  if (!mxState.agent) return true;
+  if (mxState.agent === 'none') return row.agent_id == null;
+  return row.agent_id === mxState.agent;
+}
+
+function mxSum(rows, from, to, filter = () => true) {
+  const t = mxEmptyTotals();
+  for (const r of rows) {
+    if (r.day < from || r.day > to || !filter(r)) continue;
+    for (const k of Object.keys(t)) t[k] += r[k] ?? 0;
+  }
+  return t;
+}
+
+// Evalúa una etapa contra su meta. need = cuántos resultados faltan para llegar a la meta.
+function mxEvaluate(stage, totals) {
+  const base = totals[stage.base];
+  const pct = base ? (totals[stage.key] / base) * 100 : null;
+  const target = Number(mxState.targets[stage.target]);
+  if (!base || base < mxState.targets.min_sample) return { pct, target, status: 'na', need: 0 };
+  const need = Math.max(0, Math.ceil((target / 100) * base) - totals[stage.key]);
+  const status = pct >= target ? 'ok' : pct >= target * 0.8 ? 'warn' : 'bad';
+  return { pct, target, status, need };
+}
+
+// Inversión del periodo: la del mes repartida por días.
+function mxSpendFor(from, to) {
+  let total = 0;
+  let any = false;
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    const amt = mxState.spend[`${d.slice(0, 7)}-01`];
+    if (amt != null) {
+      any = true;
+      total += amt / mxDaysInMonth(d);
+    }
+  }
+  return any ? total : null;
+}
+
+async function loadMetricas() {
+  if (!mxState.anchor) mxState.anchor = limaToday();
+  const orgId = state.me.organization?.id;
+  const token = ++mxState.token;
+  const range = mxRange();
+  const grid = mxGridRange();
+  const manage = can('metrics.manage');
+
+  mxAgentSel.hidden = !state.me.isAdmin;
+  if (!state.agents.length) await loadAgents();
+  renderMxAgentSelect();
+
+  const [rowsRes, targetsRes, spendRes, adjRes] = await Promise.all([
+    supabase.rpc('metrics_daily', { p_org: orgId, p_from: grid.from, p_to: range.to }),
+    supabase.from('metric_targets').select('*').maybeSingle(),
+    supabase.from('metric_spend').select('month, amount').gte('month', `${grid.from.slice(0, 7)}-01`).lte('month', range.to),
+    manage
+      ? supabase.from('metric_adjustments').select('*').order('day', { ascending: false }).order('created_at', { ascending: false }).limit(15)
+      : Promise.resolve({ data: [] }),
+  ]);
+  if (token !== mxState.token) return; // llegó una consulta más nueva
+  if (rowsRes.error) {
+    console.error('Error cargando métricas:', rowsRes.error.message);
+    document.getElementById('mx-funnel').innerHTML = '<p class="ag-empty">Error cargando las métricas.</p>';
+    return;
+  }
+  mxState.rows = rowsRes.data ?? [];
+  mxState.targets = { ...MX_DEFAULT_TARGETS, ...(targetsRes.data ?? {}) };
+  mxState.spend = Object.fromEntries((spendRes.data ?? []).map((s) => [s.month, Number(s.amount)]));
+  mxState.adjustments = adjRes.data ?? [];
+  renderMetricas();
+}
+
+function renderMxAgentSelect() {
+  if (!state.me.isAdmin) return;
+  const cur = mxState.agent;
+  mxAgentSel.innerHTML =
+    '<option value="">Todo el equipo</option>' +
+    state.agents.map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('') +
+    '<option value="none">Sin asignar</option>';
+  mxAgentSel.value = cur;
+}
+
+function renderMetricas() {
+  const range = mxRange();
+  document.getElementById('mx-range-label').textContent = mxRangeLabel();
+  document.querySelectorAll('#mx-period .chip').forEach((c) => c.classList.toggle('is-active', c.dataset.mxPeriod === mxState.period));
+
+  const totals = mxSum(mxState.rows, range.from, range.to, mxMatchesAgent);
+  const teamScope = !mxState.agent && state.me.isAdmin;
+  const spend = teamScope ? mxSpendFor(range.from, range.to) : null;
+
+  renderMxKpis(totals);
+  renderMxFunnel(totals, spend, teamScope);
+  renderMxAgents(range, totals);
+  renderMxDays();
+  renderMxTargets();
+  renderMxAdjust();
+}
+
+function renderMxKpis(t) {
+  const resp = mxEvaluate(MX_STAGES[1], t);
+  const conv = t.leads ? (t.ventas / t.leads) * 100 : null;
+  const cell = (top, sub, cls = '') => `<div class="ag-kpi"><div><div class="ag-kpi-top ${cls}">${top}</div><div class="ag-kpi-sub">${sub}</div></div></div>`;
+  document.getElementById('mx-kpis').innerHTML =
+    cell(`<b>${t.leads}</b>`, 'Leads nuevos') +
+    cell(`<b>${mxPct(resp.pct)}</b>`, `Respuesta · meta ${mxPct(resp.target)}`, `mx-text-${resp.status}`) +
+    cell(`<b>${t.agendo}</b>`, `Visitas agendadas · ${t.asistio} asistieron`) +
+    cell(`<b>${t.ventas}</b>`, `Ventas · conversión ${mxPct(conv)}`);
+}
+
+function renderMxFunnel(t, spend, teamScope) {
+  const rows = MX_STAGES.map((s, i) => {
+    const ev = s.base ? mxEvaluate(s, t) : null;
+    const pctCell = s.base
+      ? `<td class="mx-pct mx-${ev.status}" title="${MX_STATUS_LABEL[ev.status]} · meta ${mxPct(ev.target)}">${mxPct(ev.pct)}</td>`
+      : '<td class="mx-pct">100%</td>';
+    const cost = spend != null && t[s.key] ? mxMoney(spend / t[s.key]) : '—';
+    const spendCell = i === 0 ? `<td class="mx-spend" rowspan="${MX_STAGES.length}">${spend != null ? mxMoney(spend) : teamScope ? '<span class="muted">Sin inversión cargada</span>' : '<span class="muted">Solo vista de equipo</span>'}</td>` : '';
+    return `<tr class="${i === 0 || i === MX_STAGES.length - 1 ? 'mx-strong' : ''}"><td>${s.label}</td>${pctCell}<td class="mx-num">${t[s.key]}</td><td class="mx-cost">${cost}</td>${spendCell}</tr>`;
+  }).join('');
+  const conv = t.leads ? (t.ventas / t.leads) * 100 : null;
+  document.getElementById('mx-funnel').innerHTML = `
+    <div class="mx-table-wrap"><table class="mx-table">
+      <thead><tr><th>KPI</th><th>%</th><th>Resultados</th><th>Costo unidad</th><th>Inversión</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td>Tasa de conversión / Leads</td><td colspan="4">${mxPct(conv)}</td></tr></tfoot>
+    </table></div>`;
+}
+
+// Equipo: una fila por asesor. Con un asesor elegido: qué le falta para llegar a cada meta.
+function renderMxAgents(range, totals) {
+  const el = document.getElementById('mx-agents');
+  const checked = MX_STAGES.slice(1);
+
+  if (mxState.agent || !state.me.isAdmin) {
+    const items = checked
+      .map((s) => ({ s, ev: mxEvaluate(s, totals) }))
+      .filter((x) => x.ev.status === 'bad' || x.ev.status === 'warn')
+      .map(({ s, ev }) => `<li class="mx-${ev.status}"><b>${s.short}</b>: ${mxPct(ev.pct)} (meta ${mxPct(ev.target)}) — faltan <b>${ev.need}</b> ${s.unit}</li>`);
+    el.innerHTML = `
+      <div class="mx-card-title">Qué le falta</div>
+      ${items.length ? `<ul class="mx-need">${items.join('')}</ul>` : '<p class="ag-empty">Está en meta en todas las etapas con datos suficientes.</p>'}`;
+    return;
+  }
+
+  const ids = new Set(mxState.rows.filter((r) => r.day >= range.from && r.day <= range.to).map((r) => r.agent_id ?? 'none'));
+  const list = state.agents.map((a) => ({ id: a.id, name: a.name }));
+  if (ids.has('none')) list.push({ id: 'none', name: 'Sin asignar' });
+
+  const body = list
+    .map((a) => {
+      const t = mxSum(mxState.rows, range.from, range.to, (r) => (a.id === 'none' ? r.agent_id == null : r.agent_id === a.id));
+      const evs = checked.map((s) => ({ s, ev: mxEvaluate(s, t) }));
+      const low = evs.filter((x) => x.ev.status === 'bad');
+      const state_ = low.length ? 'bad' : evs.some((x) => x.ev.status === 'warn') ? 'warn' : evs.every((x) => x.ev.status === 'na') ? 'na' : 'ok';
+      const label = low.length ? `Bajo en ${low.map((x) => x.s.short.toLowerCase()).join(', ')}` : MX_STATUS_LABEL[state_];
+      return `<tr data-mx-agent="${a.id}" class="mx-row-click">
+        <td><b>${escapeHtml(a.name)}</b></td><td class="mx-num">${t.leads}</td>
+        ${evs.map(({ ev }) => `<td class="mx-pct mx-${ev.status}" title="${ev.status === 'na' ? 'Pocos datos' : `Meta ${mxPct(ev.target)} · faltan ${ev.need}`}">${mxPct(ev.pct)}</td>`).join('')}
+        <td><span class="mx-badge mx-${state_}">${escapeHtml(label)}</span></td></tr>`;
+    })
+    .join('');
+  el.innerHTML = `
+    <div class="mx-card-title">Cómo va cada asesor</div>
+    <div class="mx-table-wrap"><table class="mx-table mx-table-sm">
+      <thead><tr><th>Asesor</th><th>Leads</th>${checked.map((s) => `<th>${s.short}</th>`).join('')}<th>Estado</th></tr></thead>
+      <tbody>${body || '<tr><td colspan="8" class="ag-empty">Sin asesores.</td></tr>'}</tbody>
+    </table></div>
+    <p class="mx-hint">Toca un asesor para ver qué le falta.</p>`;
+}
+
+function renderMxDays() {
+  const g = mxGridRange();
+  const range = mxRange();
+  let body = '';
+  for (let d = g.from; d <= g.to; d = addDays(d, 1)) {
+    const t = mxSum(mxState.rows, d, d, mxMatchesAgent);
+    const ev = mxEvaluate(MX_STAGES[1], t);
+    const cur = d >= range.from && d <= range.to ? ' mx-day-current' : '';
+    body += `<tr class="${cur}"><td>${mxDate(d, { weekday: 'short', day: 'numeric', month: 'short' })}</td>${MX_STAGES.map((s) => `<td class="mx-num">${t[s.key]}</td>`).join('')}<td class="mx-pct mx-${ev.status}">${mxPct(ev.pct)}</td></tr>`;
+  }
+  document.getElementById('mx-days').innerHTML = `
+    <div class="mx-card-title">Registro diario</div>
+    <div class="mx-table-wrap"><table class="mx-table mx-table-sm">
+      <thead><tr><th>Día</th><th>Leads</th><th>Resp.</th><th>Agendó</th><th>Asistió</th><th>Separó</th><th>Ventas</th><th>% resp.</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>`;
+}
+
+function renderMxTargets() {
+  const manage = can('metrics.manage');
+  const tg = mxState.targets;
+  const month = `${mxState.anchor.slice(0, 7)}-01`;
+  const dis = manage ? '' : 'disabled';
+  document.getElementById('mx-targets').innerHTML = `
+    <div class="mx-card-title">Metas de referencia</div>
+    <div class="mx-form">
+      ${MX_TARGET_FIELDS.map(([k, l]) => `<label class="mx-field"><span>${l}</span><span class="mx-input-suffix"><input type="number" min="0" max="100" step="1" data-mx-target="${k}" value="${tg[k]}" ${dis} />%</span></label>`).join('')}
+      <label class="mx-field"><span>Mínimo de datos para evaluar</span><input type="number" min="1" step="1" data-mx-target="min_sample" value="${tg.min_sample}" ${dis} /></label>
+      <div class="mx-checks">
+        <label><input type="checkbox" data-mx-target="alert_enabled" ${tg.alert_enabled ? 'checked' : ''} ${dis} /> Avisar por WhatsApp a los números de alerta</label>
+        <label><input type="checkbox" data-mx-target="alert_daily" ${tg.alert_daily ? 'checked' : ''} ${dis} /> Resumen diario (8:00 a. m.)</label>
+        <label><input type="checkbox" data-mx-target="alert_weekly" ${tg.alert_weekly ? 'checked' : ''} ${dis} /> Resumen semanal (lunes)</label>
+        <label><input type="checkbox" data-mx-target="notify_agents" ${tg.notify_agents ? 'checked' : ''} ${dis} /> Avisar también a cada asesor bajo la meta</label>
+      </div>
+      ${manage ? '<button type="button" class="btn btn-primary" id="mx-save-targets">Guardar metas</button><span class="mx-status" id="mx-targets-status"></span>' : ''}
+    </div>
+    ${manage ? `
+    <div class="mx-form mx-form-sep">
+      <label class="mx-field"><span>Inversión de ${mxDate(month, { month: 'long', year: 'numeric' })}</span>
+        <span class="mx-input-suffix">S/. <input type="number" min="0" step="0.01" id="mx-spend-input" value="${mxState.spend[month] ?? ''}" placeholder="0.00" /></span></label>
+      <button type="button" class="btn" id="mx-save-spend">Guardar inversión</button><span class="mx-status" id="mx-spend-status"></span>
+    </div>` : ''}
+    <ul class="mx-tips">
+      <li>Llama en los primeros 5 minutos y haz hasta 6 intentos de contacto en la semana antes de descartar.</li>
+      <li>Anota las objeciones más comunes para mejorar el marketing con ese feedback.</li>
+      <li>Para sumar visitas o separaciones que el CRM no detectó, usa un ajuste manual.</li>
+    </ul>`;
+}
+
+function renderMxAdjust() {
+  const el = document.getElementById('mx-adjust');
+  if (!can('metrics.manage')) {
+    el.innerHTML = '';
+    return;
+  }
+  const agentName = (id) => (id ? state.agents.find((a) => a.id === id)?.name ?? '—' : 'Sin asignar');
+  const stageLabel = (k) => MX_STAGES.find((s) => s.key === k)?.label ?? k;
+  el.innerHTML = `
+    <div class="mx-card-title">Ajuste manual</div>
+    <div class="mx-form">
+      <label class="mx-field"><span>Asesor</span><select id="mx-adj-agent"><option value="">Sin asignar</option>${state.agents.map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('')}</select></label>
+      <label class="mx-field"><span>Día</span><input type="date" id="mx-adj-day" value="${limaToday()}" max="${limaToday()}" /></label>
+      <label class="mx-field"><span>Etapa</span><select id="mx-adj-stage">${MX_STAGES.map((s) => `<option value="${s.key}">${s.label}</option>`).join('')}</select></label>
+      <label class="mx-field"><span>Cantidad (negativa para restar)</span><input type="number" step="1" id="mx-adj-qty" value="1" /></label>
+      <label class="mx-field"><span>Nota</span><input type="text" id="mx-adj-note" maxlength="140" placeholder="Opcional" /></label>
+      <button type="button" class="btn" id="mx-adj-add">Agregar ajuste</button><span class="mx-status" id="mx-adj-status"></span>
+    </div>
+    ${mxState.adjustments.length ? `<ul class="mx-adj-list">${mxState.adjustments
+      .map((a) => `<li><span>${mxDate(a.day, { day: 'numeric', month: 'short' })} · ${escapeHtml(agentName(a.agent_id))} · ${escapeHtml(stageLabel(a.stage))} <b>${a.qty > 0 ? '+' : ''}${a.qty}</b>${a.note ? ` · ${escapeHtml(a.note)}` : ''}</span><button type="button" class="mx-adj-del" data-mx-del="${a.id}" aria-label="Quitar ajuste">✕</button></li>`)
+      .join('')}</ul>` : ''}`;
+}
+
+const mxSetStatus = (id, text) => {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+};
+
+async function mxSaveTargets() {
+  const patch = {};
+  document.querySelectorAll('[data-mx-target]').forEach((el) => {
+    const k = el.dataset.mxTarget;
+    patch[k] = el.type === 'checkbox' ? el.checked : Number(el.value);
+  });
+  for (const [k] of MX_TARGET_FIELDS) {
+    if (!(patch[k] >= 0 && patch[k] <= 100)) return mxSetStatus('mx-targets-status', 'Cada meta debe estar entre 0 y 100.');
+  }
+  if (!(patch.min_sample >= 1)) return mxSetStatus('mx-targets-status', 'El mínimo de datos debe ser 1 o más.');
+  mxSetStatus('mx-targets-status', 'Guardando…');
+  const orgId = state.me.organization?.id;
+  let { data, error } = await supabase.from('metric_targets').update(patch).eq('organization_id', orgId).select();
+  if (!error && !data.length) ({ error } = await supabase.from('metric_targets').insert({ organization_id: orgId, ...patch }));
+  if (error) return mxSetStatus('mx-targets-status', `Error: ${error.message}`);
+  mxState.targets = { ...mxState.targets, ...patch };
+  mxSetStatus('mx-targets-status', 'Guardado ✓');
+  renderMetricas();
+}
+
+async function mxSaveSpend() {
+  const raw = document.getElementById('mx-spend-input').value;
+  const amount = Number(raw);
+  const month = `${mxState.anchor.slice(0, 7)}-01`;
+  if (raw === '' || !(amount >= 0)) return mxSetStatus('mx-spend-status', 'Escribe un monto válido.');
+  mxSetStatus('mx-spend-status', 'Guardando…');
+  const { error } = await supabase
+    .from('metric_spend')
+    .upsert({ organization_id: state.me.organization?.id, month, amount }, { onConflict: 'organization_id,month' });
+  if (error) return mxSetStatus('mx-spend-status', `Error: ${error.message}`);
+  mxState.spend[month] = amount;
+  renderMetricas();
+  mxSetStatus('mx-spend-status', 'Guardado ✓');
+}
+
+async function mxAddAdjustment() {
+  const qty = parseInt(document.getElementById('mx-adj-qty').value, 10);
+  const day = document.getElementById('mx-adj-day').value;
+  if (!day || !qty) return mxSetStatus('mx-adj-status', 'Indica el día y una cantidad distinta de 0.');
+  mxSetStatus('mx-adj-status', 'Guardando…');
+  const { error } = await supabase.from('metric_adjustments').insert({
+    agent_id: document.getElementById('mx-adj-agent').value || null,
+    day,
+    stage: document.getElementById('mx-adj-stage').value,
+    qty,
+    note: document.getElementById('mx-adj-note').value.trim() || null,
+  });
+  if (error) return mxSetStatus('mx-adj-status', `Error: ${error.message}`);
+  await loadMetricas();
+}
+
+function mxShift(dir) {
+  if (mxState.period === 'day') mxState.anchor = addDays(mxState.anchor, dir);
+  else if (mxState.period === 'week') mxState.anchor = addDays(mxState.anchor, 7 * dir);
+  else {
+    const [y, m] = mxState.anchor.split('-').map(Number);
+    mxState.anchor = new Date(Date.UTC(y, m - 1 + dir, 1, 12)).toISOString().slice(0, 10);
+  }
+  loadMetricas();
+}
+
+document.getElementById('mx-period').addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-mx-period]');
+  if (!b) return;
+  mxState.period = b.dataset.mxPeriod;
+  loadMetricas();
+});
+document.getElementById('mx-prev').addEventListener('click', () => mxShift(-1));
+document.getElementById('mx-next').addEventListener('click', () => mxShift(1));
+document.getElementById('mx-today').addEventListener('click', () => {
+  mxState.anchor = limaToday();
+  loadMetricas();
+});
+document.getElementById('mx-refresh').addEventListener('click', () => loadMetricas());
+mxAgentSel.addEventListener('change', () => {
+  mxState.agent = mxAgentSel.value;
+  renderMetricas();
+});
+viewMetricas.addEventListener('click', async (ev) => {
+  const row = ev.target.closest('[data-mx-agent]');
+  if (row) {
+    mxState.agent = row.dataset.mxAgent;
+    mxAgentSel.value = mxState.agent;
+    return renderMetricas();
+  }
+  if (ev.target.closest('#mx-save-targets')) return mxSaveTargets();
+  if (ev.target.closest('#mx-save-spend')) return mxSaveSpend();
+  if (ev.target.closest('#mx-adj-add')) return mxAddAdjustment();
+  const del = ev.target.closest('[data-mx-del]');
+  if (del) {
+    const { error } = await supabase.from('metric_adjustments').delete().eq('id', del.dataset.mxDel);
+    if (error) alert(`No se pudo quitar el ajuste: ${error.message}`);
+    else await loadMetricas();
+  }
 });
 
 (async function init() {
