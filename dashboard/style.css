@@ -2799,7 +2799,7 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 /* Si no caben en una línea, los selectores pasan debajo del nombre en vez de apretarlo. */
 .channel-thread-header { flex-wrap: wrap; row-gap: 8px; }
 .channel-thread-heading { flex: 1 1 150px; }
-.channel-thread-controls { margin-left: auto; }
+.channel-thread-controls { margin-left: auto; flex-wrap: wrap; justify-content: flex-end; flex-shrink: 1; min-width: 0; }
 
 /* Panel "Info del cliente": secciones (Asignación, Etiquetas, Calificación…) ───────
    Encabezado con más contraste y franja de color; el cuerpo con otro fondo para que se
@@ -3146,14 +3146,15 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 .mx-text-warn b { color: var(--warn-dark); }
 .mx-text-bad b { color: #b91c1c; }
 
-.mx-card-title { padding: 14px 18px 0; font-weight: 700; font-size: 14px; color: var(--text-secondary); }
+.mx-card-title { padding: 14px 18px 10px; font-weight: 700; font-size: 14px; color: var(--text-secondary); }
 .mx-table-wrap { overflow-x: auto; }
 .mx-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .mx-table th { background: #0f2540; color: #fff; padding: 10px 12px; text-align: center; font-weight: 700; font-size: 12.5px; }
 .mx-table th:first-child, .mx-table td:first-child { text-align: left; }
 .mx-table td { padding: 9px 12px; border-bottom: 1px solid var(--border-subtle); text-align: center; }
 .mx-table td:first-child { text-align: left; }
-.mx-table-sm th, .mx-table-sm td { padding: 8px 8px; }
+.mx-table-sm th, .mx-table-sm td { padding: 8px 6px; }
+.mx-table-sm th { font-size: 11px; letter-spacing: 0; }
 .mx-table tfoot td { background: #1c6e6a; color: #fff; font-weight: 700; text-align: left; }
 .mx-strong td:first-child { font-weight: 700; }
 .mx-num { font-weight: 700; background: #fff7e0; }

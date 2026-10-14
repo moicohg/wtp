@@ -7408,8 +7408,8 @@ async function mxSaveTargets() {
   if (!error && !data.length) ({ error } = await supabase.from('metric_targets').insert({ organization_id: orgId, ...patch }));
   if (error) return mxSetStatus('mx-targets-status', `Error: ${error.message}`);
   mxState.targets = { ...mxState.targets, ...patch };
-  mxSetStatus('mx-targets-status', 'Guardado ✓');
   renderMetricas();
+  mxSetStatus('mx-targets-status', 'Guardado ✓');
 }
 
 async function mxSaveSpend() {
