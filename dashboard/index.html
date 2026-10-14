@@ -282,6 +282,7 @@
               <button type="button" id="mx-next" aria-label="Periodo siguiente">›</button>
             </div>
             <select id="mx-agent" class="mx-select" aria-label="Asesor"></select>
+            <select id="mx-origen" class="mx-select" aria-label="Origen del lead"></select>
             <button type="button" class="btn" id="mx-refresh" title="Actualizar" aria-label="Actualizar">⟳</button>
           </div>
         </div>
@@ -291,6 +292,7 @@
         <div class="ag-grid">
           <div class="ag-main">
             <div class="ag-card" id="mx-funnel"></div>
+            <div class="ag-card" id="mx-origins"></div>
             <div class="ag-card" id="mx-agents"></div>
             <div class="ag-card" id="mx-days"></div>
           </div>
@@ -722,6 +724,15 @@
                     <div class="ct-dropdown-panel" id="ct-etapa-panel" hidden></div>
                   </div>
 
+                  <div class="ct-dropdown">
+                    <button type="button" class="ct-chip" id="ct-origen-trigger" title="De dónde vino este lead">
+                      <span id="ct-origen-icon">📍</span>
+                      <span id="ct-origen-label">Origen</span>
+                      <span class="filter-caret">▾</span>
+                    </button>
+                    <div class="ct-dropdown-panel" id="ct-origen-panel" hidden></div>
+                  </div>
+
                   <button type="button" class="ct-chip" id="ct-ia-toggle">🤖 IA On</button>
                 </div>
               </div>
@@ -827,6 +838,10 @@
                       <label class="ci-field">
                         <span class="ci-field-label">👤 Asignar asesor</span>
                         <select id="ci-agent"><option value="">Sin asignar</option></select>
+                      </label>
+                      <label class="ci-field">
+                        <span class="ci-field-label">📍 Detalle del origen</span>
+                        <input id="ci-origen-detalle" type="text" maxlength="140" placeholder="Anuncio, quién lo refirió o zona de campo" />
                       </label>
                       <button type="button" class="ci-ghost-btn" disabled title="Próximamente">⇄ Forzar reasignación</button>
                     </div>

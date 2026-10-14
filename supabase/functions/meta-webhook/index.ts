@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { detectAppointment } from '../_shared/appointments.ts';
 import { settleBurst, withoutPending } from '../_shared/burst.ts';
 import { agendaEnabled, aiAllowed, getOrgUsage } from '../_shared/limits.ts';
+import { adReferralFromMeta, markAdOrigin } from '../_shared/origin.ts';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ interface Vendor {
 interface Prospect {
   id: string;
   vendor_id: string;
+  origen?: string | null;
   phone: string;
   nombre: string;
   tipo_operacion: string | null;
@@ -455,6 +457,7 @@ Deno.serve(async (req: Request) => {
 
           // 2. Buscar o crear prospect
           const prospect = await getOrCreateProspect(from, vendor.id);
+          await markAdOrigin(supabase, prospect, adReferralFromMeta(message));
 
           // 3. Cargar historial
           const { data: historyRows } = await supabase

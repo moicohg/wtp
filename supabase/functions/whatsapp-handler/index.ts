@@ -3,6 +3,7 @@ import { detectAppointment } from '../_shared/appointments.ts';
 import { agendaEnabled, aiAllowed, getOrgUsage, storageAllowed } from '../_shared/limits.ts';
 import { settleBurst, withoutPending } from '../_shared/burst.ts';
 import { understandMedia } from '../_shared/media-ai.ts';
+import { adReferralFromEvolution, markAdOrigin } from '../_shared/origin.ts';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ interface Vendor {
 interface Prospect {
   id: string;
   vendor_id: string;
+  origen?: string | null;
   phone: string;
   nombre: string;
   tipo_operacion: string | null;
@@ -493,6 +495,7 @@ Deno.serve(async (req: Request) => {
 
     // 2. Buscar o crear prospect
     const prospect = await getOrCreateProspect(phone, vendor.id);
+    await markAdOrigin(supabase, prospect, adReferralFromEvolution(data));
 
     // 3. Cargar historial de mensajes
     const { data: historyRows } = await supabase

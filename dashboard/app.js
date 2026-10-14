@@ -371,6 +371,11 @@ const ctEtapaTrigger = document.getElementById('ct-etapa-trigger');
 const ctEtapaIcon = document.getElementById('ct-etapa-icon');
 const ctEtapaLabel = document.getElementById('ct-etapa-label');
 const ctEtapaPanel = document.getElementById('ct-etapa-panel');
+const ctOrigenTrigger = document.getElementById('ct-origen-trigger');
+const ctOrigenIcon = document.getElementById('ct-origen-icon');
+const ctOrigenLabel = document.getElementById('ct-origen-label');
+const ctOrigenPanel = document.getElementById('ct-origen-panel');
+const ciOrigenDetalle = document.getElementById('ci-origen-detalle');
 const ctIaToggle = document.getElementById('ct-ia-toggle');
 
 const PERFIL_OPTIONS = [
@@ -380,6 +385,17 @@ const PERFIL_OPTIONS = [
   { value: 'agente', label: 'Agente', color: '#d1352a' },
   { value: 'familia', label: 'familia', color: '#3763d6' },
 ];
+
+// De dónde vino el lead (prospects.origen). facebook_ads lo marca solo el CRM al detectar un anuncio
+// de click-a-WhatsApp; el resto lo marca la persona. Sin valor = sin clasificar.
+const ORIGEN_OPTIONS = [
+  { value: '', label: 'Sin clasificar', icon: '📍', color: '#6b7280' },
+  { value: 'facebook_ads', label: 'Anuncio de Facebook', icon: '📣', color: '#1877f2' },
+  { value: 'campo', label: 'Campo (calle)', icon: '🚶', color: '#15803d' },
+  { value: 'referido', label: 'Referido', icon: '🤝', color: '#9333ea' },
+  { value: 'otro', label: 'Otro', icon: '🏷️', color: '#6b7280' },
+];
+const origenMeta = (v) => ORIGEN_OPTIONS.find((o) => o.value === (v ?? '')) ?? ORIGEN_OPTIONS[0];
 
 const ETAPA_OPTIONS = [
   { value: '', label: 'Sin etapa', icon: '—', color: '#6b7280' },
@@ -3759,6 +3775,8 @@ async function openChannelProspect(prospectId) {
   ctPhone.hidden = false;
   setPerfilChip(p.perfil);
   setEtapaChip(p.etapa);
+  setOrigenChip(p.origen);
+  ciOrigenDetalle.value = p.origen_detalle ?? '';
   setIaToggleUI(p.ia_enabled);
   closeCtDropdowns();
 
@@ -3871,6 +3889,25 @@ function setEtapaChip(value) {
   ctEtapaLabel.textContent = opt.label;
   ctEtapaTrigger.classList.toggle('ct-chip-tinted', Boolean(value));
   ctEtapaTrigger.style.setProperty('--tint', opt.color);
+}
+
+function setOrigenChip(value) {
+  const opt = origenMeta(value);
+  ctOrigenIcon.textContent = opt.icon;
+  ctOrigenLabel.textContent = value ? opt.label : 'Origen';
+  ctOrigenTrigger.classList.toggle('ct-chip-tinted', Boolean(value));
+  ctOrigenTrigger.style.setProperty('--tint', opt.color);
+}
+
+function renderOrigenPanel(current) {
+  ctOrigenPanel.innerHTML = ORIGEN_OPTIONS.map(
+    (o) => `
+    <div class="ct-option" data-value="${o.value}">
+      <span>${o.icon}</span>
+      <span style="color:${o.color}">${escapeHtml(o.label)}</span>
+      ${o.value === (current ?? '') ? '<span class="ct-check">✓</span>' : ''}
+    </div>`
+  ).join('');
 }
 
 function renderEtapaPanel(current) {
@@ -4505,6 +4542,7 @@ async function saveChannelInfo(ev) {
     .update({
       etiquetas: state.ciTags,
       handled_by_agent_id: ciAgent.value || null,
+      origen_detalle: ciOrigenDetalle.value.trim() || null,
       zona: ciZona.value.trim() || null,
       presupuesto: ciPresupuesto.value ? Number(ciPresupuesto.value) : null,
       notas: ciNotas.value.trim(),
@@ -4595,6 +4633,24 @@ ctEtapaPanel.addEventListener('click', async (ev) => {
   ctEtapaPanel.hidden = true;
   await updateActiveProspect({ etapa: opt.dataset.value });
   setEtapaChip(opt.dataset.value);
+});
+
+ctOrigenTrigger.addEventListener('click', (ev) => {
+  ev.stopPropagation();
+  const willOpen = ctOrigenPanel.hidden;
+  closeCtDropdowns();
+  if (willOpen) {
+    const p = state.channelProspects.find((x) => x.id === state.channelActiveProspectId);
+    renderOrigenPanel(p?.origen ?? '');
+  }
+  ctOrigenPanel.hidden = !willOpen;
+});
+ctOrigenPanel.addEventListener('click', async (ev) => {
+  const opt = ev.target.closest('.ct-option[data-value]');
+  if (!opt) return;
+  ctOrigenPanel.hidden = true;
+  await updateActiveProspect({ origen: opt.dataset.value || null });
+  setOrigenChip(opt.dataset.value);
 });
 
 document.addEventListener('click', (ev) => {
@@ -7014,10 +7070,11 @@ const MX_DEFAULT_TARGETS = {
 };
 const MX_STATUS_LABEL = { ok: 'En meta', warn: 'Cerca', bad: 'Bajo', na: 'Pocos datos' };
 
-const mxState = { period: 'day', anchor: null, agent: '', rows: [], targets: { ...MX_DEFAULT_TARGETS }, spend: {}, adjustments: [], token: 0 };
+const mxState = { period: 'day', anchor: null, agent: '', origen: '', rows: [], targets: { ...MX_DEFAULT_TARGETS }, spend: {}, adjustments: [], token: 0 };
 
 const viewMetricas = document.getElementById('view-metricas');
 const mxAgentSel = document.getElementById('mx-agent');
+const mxOrigenSel = document.getElementById('mx-origen');
 
 const mxMoney = (n) => `S/. ${n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const mxPct = (n) => (n == null ? '—' : `${n.toLocaleString('es-PE', { maximumFractionDigits: 1 })}%`);
@@ -7053,11 +7110,9 @@ function mxRangeLabel() {
 
 const mxEmptyTotals = () => ({ leads: 0, responde: 0, agendo: 0, asistio: 0, separo: 0, ventas: 0 });
 
-function mxMatchesAgent(row) {
-  if (!mxState.agent) return true;
-  if (mxState.agent === 'none') return row.agent_id == null;
-  return row.agent_id === mxState.agent;
-}
+const mxAgentOk = (row, agent) => !agent || (agent === 'none' ? row.agent_id == null : row.agent_id === agent);
+const mxOrigenOk = (row, origen) => !origen || (origen === 'none' ? row.origen == null : row.origen === origen);
+const mxMatchesAgent = (row) => mxAgentOk(row, mxState.agent) && mxOrigenOk(row, mxState.origen);
 
 function mxSum(rows, from, to, filter = () => true) {
   const t = mxEmptyTotals();
@@ -7104,6 +7159,11 @@ async function loadMetricas() {
   mxAgentSel.hidden = !state.me.isAdmin;
   if (!state.agents.length) await loadAgents();
   renderMxAgentSelect();
+  mxOrigenSel.innerHTML =
+    '<option value="">Todos los orígenes</option>' +
+    ORIGEN_OPTIONS.filter((o) => o.value).map((o) => `<option value="${o.value}">${o.icon} ${escapeHtml(o.label)}</option>`).join('') +
+    '<option value="none">Sin clasificar</option>';
+  mxOrigenSel.value = mxState.origen;
 
   const [rowsRes, targetsRes, spendRes, adjRes] = await Promise.all([
     supabase.rpc('metrics_daily', { p_org: orgId, p_from: grid.from, p_to: range.to }),
@@ -7142,11 +7202,12 @@ function renderMetricas() {
   document.querySelectorAll('#mx-period .chip').forEach((c) => c.classList.toggle('is-active', c.dataset.mxPeriod === mxState.period));
 
   const totals = mxSum(mxState.rows, range.from, range.to, mxMatchesAgent);
-  const teamScope = !mxState.agent && state.me.isAdmin;
+  const teamScope = !mxState.agent && !mxState.origen && state.me.isAdmin;
   const spend = teamScope ? mxSpendFor(range.from, range.to) : null;
 
   renderMxKpis(totals);
   renderMxFunnel(totals, spend, teamScope);
+  renderMxOrigins(range);
   renderMxAgents(range, totals);
   renderMxDays();
   renderMxTargets();
@@ -7171,7 +7232,7 @@ function renderMxFunnel(t, spend, teamScope) {
       ? `<td class="mx-pct mx-${ev.status}" title="${MX_STATUS_LABEL[ev.status]} · meta ${mxPct(ev.target)}">${mxPct(ev.pct)}</td>`
       : '<td class="mx-pct">100%</td>';
     const cost = spend != null && t[s.key] ? mxMoney(spend / t[s.key]) : '—';
-    const spendCell = i === 0 ? `<td class="mx-spend" rowspan="${MX_STAGES.length}">${spend != null ? mxMoney(spend) : teamScope ? '<span class="muted">Sin inversión cargada</span>' : '<span class="muted">Solo vista de equipo</span>'}</td>` : '';
+    const spendCell = i === 0 ? `<td class="mx-spend" rowspan="${MX_STAGES.length}">${spend != null ? mxMoney(spend) : teamScope ? '<span class="muted">Sin inversión cargada</span>' : '<span class="muted">Solo vista de todo el equipo y todos los orígenes</span>'}</td>` : '';
     return `<tr class="${i === 0 || i === MX_STAGES.length - 1 ? 'mx-strong' : ''}"><td>${s.label}</td>${pctCell}<td class="mx-num">${t[s.key]}</td><td class="mx-cost">${cost}</td>${spendCell}</tr>`;
   }).join('');
   const conv = t.leads ? (t.ventas / t.leads) * 100 : null;
@@ -7205,7 +7266,7 @@ function renderMxAgents(range, totals) {
 
   const body = list
     .map((a) => {
-      const t = mxSum(mxState.rows, range.from, range.to, (r) => (a.id === 'none' ? r.agent_id == null : r.agent_id === a.id));
+      const t = mxSum(mxState.rows, range.from, range.to, (r) => mxAgentOk(r, a.id) && mxOrigenOk(r, mxState.origen));
       const evs = checked.map((s) => ({ s, ev: mxEvaluate(s, t) }));
       const low = evs.filter((x) => x.ev.status === 'bad');
       const state_ = low.length ? 'bad' : evs.some((x) => x.ev.status === 'warn') ? 'warn' : evs.every((x) => x.ev.status === 'na') ? 'na' : 'ok';
@@ -7223,6 +7284,35 @@ function renderMxAgents(range, totals) {
       <tbody>${body || '<tr><td colspan="8" class="ag-empty">Sin asesores.</td></tr>'}</tbody>
     </table></div>
     <p class="mx-hint">Toca un asesor para ver qué le falta.</p>`;
+}
+
+// Embudo por origen (respeta el filtro de asesor): de dónde vienen los leads que sí avanzan.
+function renderMxOrigins(range) {
+  const el = document.getElementById('mx-origins');
+  if (mxState.origen) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  const checked = MX_STAGES.slice(1);
+  const list = [...ORIGEN_OPTIONS.filter((o) => o.value), { value: 'none', label: 'Sin clasificar', icon: '📍' }];
+  const body = list
+    .map((o) => {
+      const t = mxSum(mxState.rows, range.from, range.to, (r) => mxAgentOk(r, mxState.agent) && mxOrigenOk(r, o.value));
+      if (!MX_STAGES.some((s) => t[s.key])) return '';
+      const conv = t.leads ? (t.ventas / t.leads) * 100 : null;
+      return `<tr data-mx-origen="${o.value}" class="mx-row-click"><td><b>${o.icon} ${escapeHtml(o.label)}</b></td><td class="mx-num">${t.leads}</td>
+        ${checked.map((s) => { const ev = mxEvaluate(s, t); return `<td class="mx-pct mx-${ev.status}" title="${t[s.key]} · meta ${mxPct(ev.target)}">${mxPct(ev.pct)}</td>`; }).join('')}
+        <td class="mx-num">${t.ventas}</td><td>${mxPct(conv)}</td></tr>`;
+    })
+    .join('');
+  el.innerHTML = `
+    <div class="mx-card-title">Por origen del lead</div>
+    <div class="mx-table-wrap"><table class="mx-table mx-table-sm">
+      <thead><tr><th>Origen</th><th>Leads</th>${checked.map((s) => `<th>${s.short}</th>`).join('')}<th>Ventas</th><th>Conv.</th></tr></thead>
+      <tbody>${body || '<tr><td colspan="9" class="ag-empty">Sin datos en este periodo.</td></tr>'}</tbody>
+    </table></div>
+    <p class="mx-hint">Márcalo en el chat (chip "Origen"). Los anuncios de Facebook se marcan solos. Toca un origen para filtrar.</p>`;
 }
 
 function renderMxDays() {
@@ -7376,11 +7466,21 @@ document.getElementById('mx-today').addEventListener('click', () => {
   loadMetricas();
 });
 document.getElementById('mx-refresh').addEventListener('click', () => loadMetricas());
+mxOrigenSel.addEventListener('change', () => {
+  mxState.origen = mxOrigenSel.value;
+  renderMetricas();
+});
 mxAgentSel.addEventListener('change', () => {
   mxState.agent = mxAgentSel.value;
   renderMetricas();
 });
 viewMetricas.addEventListener('click', async (ev) => {
+  const orow = ev.target.closest('[data-mx-origen]');
+  if (orow) {
+    mxState.origen = orow.dataset.mxOrigen;
+    mxOrigenSel.value = mxState.origen;
+    return renderMetricas();
+  }
   const row = ev.target.closest('[data-mx-agent]');
   if (row) {
     mxState.agent = row.dataset.mxAgent;
