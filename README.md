@@ -99,7 +99,7 @@ wtp/
 | Canales › (cada canal) | Chat de 3 paneles: contactos, conversación e "Info del cliente" | `leads.view` |
 | Productos | Catálogo de productos con precios (PEN/USD) y autocompletado por IA | `config.products` |
 | Catálogo IA | Archivos que la IA puede mencionar, asignados a uno o más canales | `config.products` |
-| Leads | Tabla de prospectos por canal con KPIs y drawer de detalle | `leads.view` |
+| Leads | Prospectos por canal con KPIs y drawer de detalle, en tres vistas que se eligen arriba a la derecha: **Tabla**, **Lista** y **Kanban** (columnas por etapa; arrastrar una tarjeta cambia la etapa del lead). Se recuerda la vista elegida | `leads.view` |
 | Automatización | Cadencias multi-día (plantilla, pasos, audiencia). Se pueden inscribir leads desde el chat (⚡) y el motor envía los pasos (ver [Cadencias](#cadencias)) | `messaging.manage_automations` |
 | Métricas | Embudo Leads → Venta con registro diario automático, vista diaria/semanal/mensual, metas, inversión y alertas (ver [Métricas](#métricas)) | `metrics.view` |
 | Disponibilidad | Estado en tiempo real de cada vendedor, historial y config de reparto de leads y alertas (ver [Reparto de leads y alertas](#reparto-de-leads-y-alertas)) | todos |

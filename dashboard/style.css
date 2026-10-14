@@ -3195,3 +3195,43 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
   #view-metricas .ag-kpis { grid-template-columns: repeat(2, 1fr); }
   #view-metricas .ag-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ── Leads: selector de vista, lista y kanban ────────────────────────────── */
+.view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); overflow: hidden; }
+.view-toggle-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 0; background: transparent; font: inherit; font-size: 13px; font-weight: 600; color: var(--text-dim); cursor: pointer; }
+.view-toggle-btn + .view-toggle-btn { border-left: 1px solid var(--border); }
+.view-toggle-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.view-toggle-btn:hover { background: var(--surface-hover); color: var(--text); }
+.view-toggle-btn.is-active { background: var(--brand-light); color: var(--brand-dark); }
+@media (max-width: 700px) { .view-toggle-btn span { display: none; } }
+
+.lead-origen, .lead-etapa { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; color: var(--tint, var(--text-dim)); background: color-mix(in srgb, var(--tint, #64748b) 12%, transparent); }
+
+.leads-list { display: flex; flex-direction: column; gap: 8px; }
+.leads-list[hidden], .kanban[hidden] { display: none; }
+.lead-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+.lead-row:hover { border-color: var(--border-hover); box-shadow: var(--shadow-card); }
+.lead-row-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.lead-row-text { min-width: 0; }
+.lead-row-name { font-weight: 700; }
+.lead-row-sub { font-size: 12.5px; color: var(--text-dim); }
+.lead-row-tags { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lead-row-date { font-size: 12px; color: var(--text-dim); min-width: 90px; text-align: right; }
+
+.kanban { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 12px; align-items: flex-start; }
+.kanban-col { flex: 0 0 272px; background: var(--surface-hover); border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; max-height: calc(100vh - 290px); min-height: 160px; transition: background 0.15s, border-color 0.15s; }
+.kanban-col.is-over { background: var(--brand-light); border-color: var(--border-focus); }
+.kanban-col-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; font-weight: 700; font-size: 13px; color: var(--text); border-top: 3px solid var(--tint, var(--border)); border-radius: var(--radius) var(--radius) 0 0; }
+.kanban-count { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; font-size: 12px; color: var(--text-dim); }
+.kanban-col-body { display: flex; flex-direction: column; gap: 8px; padding: 0 8px 10px; overflow-y: auto; flex: 1; }
+.kanban-empty { padding: 18px 8px; text-align: center; font-size: 12.5px; color: var(--text-muted); border: 1px dashed var(--border-hover); border-radius: 10px; }
+.kanban-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: grab; display: flex; flex-direction: column; gap: 6px; box-shadow: var(--shadow-card); }
+.kanban-card:hover { border-color: var(--border-hover); }
+.kanban-card.is-dragging { opacity: 0.45; cursor: grabbing; }
+.kanban-card-top { display: flex; align-items: center; gap: 8px; }
+.kanban-card-top .lead-avatar { flex-shrink: 0; }
+.kanban-card-name { flex: 1; min-width: 0; font-weight: 700; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kanban-card-sub { font-size: 12px; color: var(--text-dim); }
+.kanban-card-sub:empty { display: none; }
+.kanban-card-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.kanban-card-date { font-size: 11.5px; color: var(--text-muted); }

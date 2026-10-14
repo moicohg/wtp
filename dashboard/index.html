@@ -90,6 +90,17 @@
         <h2 id="topbar-title">Canales</h2>
         <div class="topbar-actions">
           <div class="topbar-actions-group" data-section-group="leads" hidden>
+            <div class="view-toggle" id="leads-view-toggle" role="group" aria-label="Vista de leads">
+              <button type="button" class="view-toggle-btn is-active" data-leads-view="tabla" title="Tabla">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/></svg><span>Tabla</span>
+              </button>
+              <button type="button" class="view-toggle-btn" data-leads-view="lista" title="Lista">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg><span>Lista</span>
+              </button>
+              <button type="button" class="view-toggle-btn" data-leads-view="kanban" title="Kanban">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="6" height="16" x="3" y="4" rx="1.5"/><rect width="6" height="10" x="11" y="4" rx="1.5"/><rect width="6" height="13" x="19" y="4" rx="1.5" transform="translate(-2 0)"/></svg><span>Kanban</span>
+              </button>
+            </div>
             <select id="vendor-select" aria-label="Vendor"></select>
           </div>
           <div class="topbar-actions-group" data-section-group="canales">
@@ -576,7 +587,7 @@
           <input id="search" type="search" placeholder="Buscar nombre o teléfono…" />
         </div>
 
-        <div class="table-wrap">
+        <div class="table-wrap" id="leads-table-wrap">
           <table id="prospects-table">
             <thead>
               <tr>
@@ -596,6 +607,8 @@
             </tbody>
           </table>
         </div>
+        <div class="leads-list" id="leads-list" hidden></div>
+        <div class="kanban" id="leads-kanban" hidden></div>
       </section>
 
       <!-- ═══ Vista: Bandeja Global / chats por asesor ═══════════════════ -->

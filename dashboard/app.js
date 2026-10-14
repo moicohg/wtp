@@ -3512,7 +3512,7 @@ function getFilteredSorted() {
   return rows;
 }
 
-function renderTable() {
+function renderLeadsTable() {
   const rows = getFilteredSorted();
   if (!rows.length) {
     tbody.innerHTML = `<tr class="empty-row"><td colspan="9">Sin prospectos${state.filter !== 'TODOS' ? ' en este filtro' : ''}.</td></tr>`;
@@ -3535,6 +3535,177 @@ function renderTable() {
     )
     .join('');
 }
+
+// ── Vistas de Leads: tabla, lista y kanban ───────────────────────────────────
+// Los tres formatos comparten los mismos datos, filtro de temperatura y búsqueda. La elección se
+// recuerda en el navegador. En el kanban, arrastrar una tarjeta cambia la etapa del lead.
+
+const LEADS_VIEWS = ['tabla', 'lista', 'kanban'];
+const LEADS_VIEW_KEY = 'wtp.leadsView';
+const leadsTableWrap = document.getElementById('leads-table-wrap');
+const leadsListEl = document.getElementById('leads-list');
+const leadsKanbanEl = document.getElementById('leads-kanban');
+const leadsViewToggle = document.getElementById('leads-view-toggle');
+
+state.leadsView = (() => {
+  try {
+    const v = localStorage.getItem(LEADS_VIEW_KEY);
+    return LEADS_VIEWS.includes(v) ? v : 'tabla';
+  } catch {
+    return 'tabla';
+  }
+})();
+
+// Etapas guardadas con otro nombre (p. ej. 'perdido') caen en su columna; lo desconocido, en "Sin etapa".
+function leadEtapa(p) {
+  const e = p.etapa ?? '';
+  if (e === 'perdido') return 'lead_perdido';
+  return ETAPA_OPTIONS.some((o) => o.value === e) ? e : '';
+}
+
+function leadAvatar(p) {
+  return `<span class="lead-avatar" style="background:${colorFor(p.id)}">${p.nombre ? escapeHtml(initials(p.nombre)) : '#'}</span>`;
+}
+
+function leadOrigenTag(p) {
+  if (!p.origen) return '';
+  const o = origenMeta(p.origen);
+  return `<span class="lead-origen" style="--tint:${o.color}" title="${escapeHtml(o.label)}${p.origen_detalle ? ` · ${escapeHtml(p.origen_detalle)}` : ''}">${o.icon} ${escapeHtml(o.label)}</span>`;
+}
+
+function renderLeadsList() {
+  const rows = getFilteredSorted();
+  if (!rows.length) {
+    leadsListEl.innerHTML = `<p class="muted" style="padding:24px;text-align:center;">Sin prospectos${state.filter !== 'TODOS' ? ' en este filtro' : ''}.</p>`;
+    return;
+  }
+  leadsListEl.innerHTML = rows
+    .map((p) => {
+      const et = ETAPA_OPTIONS.find((o) => o.value === leadEtapa(p)) ?? ETAPA_OPTIONS[0];
+      const meta = [p.zona, p.presupuesto ? fmtMoney(p.presupuesto, p.presupuesto_moneda) : ''].filter(Boolean).map(escapeHtml).join(' · ');
+      return `
+      <div class="lead-row" data-id="${p.id}">
+        <div class="lead-row-main">
+          ${leadAvatar(p)}
+          <div class="lead-row-text">
+            <div class="lead-row-name">${escapeHtml(p.nombre) || '<span style="color:var(--text-dim)">Sin nombre</span>'}</div>
+            <div class="lead-row-sub">${escapeHtml(p.phone)}${meta ? ` · ${meta}` : ''}</div>
+          </div>
+        </div>
+        <div class="lead-row-tags">
+          ${leadOrigenTag(p)}
+          <span class="lead-etapa" style="--tint:${et.color}">${et.icon} ${escapeHtml(et.label)}</span>
+          <span class="badge badge-${p.label}">${p.label}</span>
+          <span class="lead-score lead-score-${p.label}">${p.score}</span>
+          <span class="lead-row-date">${fmtDate(p.updated_at)}</span>
+        </div>
+      </div>`;
+    })
+    .join('');
+}
+
+function renderLeadsKanban() {
+  const rows = getFilteredSorted();
+  const byEtapa = new Map(ETAPA_OPTIONS.map((o) => [o.value, []]));
+  for (const p of rows) byEtapa.get(leadEtapa(p)).push(p);
+
+  leadsKanbanEl.innerHTML = ETAPA_OPTIONS.map((o) => {
+    const list = byEtapa.get(o.value);
+    const cards = list
+      .map((p) => {
+        const meta = [p.zona, p.presupuesto ? fmtMoney(p.presupuesto, p.presupuesto_moneda) : ''].filter(Boolean).map(escapeHtml).join(' · ');
+        return `
+        <div class="kanban-card" draggable="true" data-id="${p.id}">
+          <div class="kanban-card-top">${leadAvatar(p)}<div class="kanban-card-name">${escapeHtml(p.nombre) || escapeHtml(p.phone)}</div>
+            <span class="lead-score lead-score-${p.label}">${p.score}</span></div>
+          <div class="kanban-card-sub">${p.nombre ? `${escapeHtml(p.phone)}` : ''}${meta ? `${p.nombre ? ' · ' : ''}${meta}` : ''}</div>
+          <div class="kanban-card-tags">${leadOrigenTag(p)}<span class="badge badge-${p.label}">${p.label}</span></div>
+          <div class="kanban-card-date">${fmtDate(p.updated_at)}</div>
+        </div>`;
+      })
+      .join('');
+    return `
+      <div class="kanban-col" data-etapa="${o.value}">
+        <div class="kanban-col-head" style="--tint:${o.color}"><span>${o.icon} ${escapeHtml(o.label)}</span><span class="kanban-count">${list.length}</span></div>
+        <div class="kanban-col-body">${cards || '<div class="kanban-empty">Arrastra un lead aquí</div>'}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderTable() {
+  const view = state.leadsView;
+  leadsTableWrap.hidden = view !== 'tabla';
+  leadsListEl.hidden = view !== 'lista';
+  leadsKanbanEl.hidden = view !== 'kanban';
+  leadsViewToggle.querySelectorAll('[data-leads-view]').forEach((b) => b.classList.toggle('is-active', b.dataset.leadsView === view));
+  if (view === 'lista') renderLeadsList();
+  else if (view === 'kanban') renderLeadsKanban();
+  else renderLeadsTable();
+}
+
+async function moveLeadToEtapa(id, etapa) {
+  const p = state.prospects.find((x) => x.id === id);
+  if (!p || leadEtapa(p) === etapa) return;
+  const prev = p.etapa;
+  p.etapa = etapa || null;
+  renderTable();
+  const { error } = await supabase.from('prospects').update({ etapa: etapa || null }).eq('id', id);
+  if (error) {
+    p.etapa = prev;
+    renderTable();
+    alert(`No se pudo mover el lead: ${error.message}`);
+  }
+}
+
+leadsViewToggle.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-leads-view]');
+  if (!btn) return;
+  state.leadsView = btn.dataset.leadsView;
+  try {
+    localStorage.setItem(LEADS_VIEW_KEY, state.leadsView);
+  } catch {
+    /* sin almacenamiento: la elección vale solo para esta sesión */
+  }
+  renderTable();
+});
+
+leadsListEl.addEventListener('click', (ev) => {
+  const row = ev.target.closest('.lead-row[data-id]');
+  if (row) openDrawer(row.dataset.id);
+});
+
+let kanbanDragId = null;
+leadsKanbanEl.addEventListener('click', (ev) => {
+  const card = ev.target.closest('.kanban-card[data-id]');
+  if (card) openDrawer(card.dataset.id);
+});
+leadsKanbanEl.addEventListener('dragstart', (ev) => {
+  const card = ev.target.closest('.kanban-card');
+  if (!card) return;
+  kanbanDragId = card.dataset.id;
+  ev.dataTransfer.effectAllowed = 'move';
+  ev.dataTransfer.setData('text/plain', kanbanDragId);
+  card.classList.add('is-dragging');
+});
+leadsKanbanEl.addEventListener('dragend', () => {
+  kanbanDragId = null;
+  leadsKanbanEl.querySelectorAll('.is-dragging, .is-over').forEach((el) => el.classList.remove('is-dragging', 'is-over'));
+});
+leadsKanbanEl.addEventListener('dragover', (ev) => {
+  const col = ev.target.closest('.kanban-col');
+  if (!col || !kanbanDragId) return;
+  ev.preventDefault();
+  leadsKanbanEl.querySelectorAll('.is-over').forEach((el) => el !== col && el.classList.remove('is-over'));
+  col.classList.add('is-over');
+});
+leadsKanbanEl.addEventListener('drop', (ev) => {
+  const col = ev.target.closest('.kanban-col');
+  if (!col || !kanbanDragId) return;
+  ev.preventDefault();
+  const id = kanbanDragId;
+  kanbanDragId = null;
+  moveLeadToEtapa(id, col.dataset.etapa);
+});
 
 // ── Drawer: detalle + conversación ──────────────────────────────────────────
 
