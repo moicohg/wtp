@@ -101,6 +101,7 @@
                 <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="6" height="16" x="3" y="4" rx="1.5"/><rect width="6" height="10" x="11" y="4" rx="1.5"/><rect width="6" height="13" x="19" y="4" rx="1.5" transform="translate(-2 0)"/></svg><span>Kanban</span>
               </button>
             </div>
+            <button id="leads-export-btn" class="btn btn-ghost" type="button" title="Exportar leads a CSV">⬇ Exportar</button>
             <select id="vendor-select" aria-label="Vendor"></select>
           </div>
           <div class="topbar-actions-group" data-section-group="canales">
@@ -1476,6 +1477,31 @@
   </div>
 
   <!-- Modal: crear campo personalizado (definición global, valores por chat) -->
+  <div id="leads-export-overlay" class="overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="drawer-header">
+        <h2>⬇ Exportar leads</h2>
+        <button class="btn-icon" id="leads-export-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="settings-form">
+        <p class="muted" style="margin:-8px 0 0;">Descarga un archivo CSV que abre en Excel o Google Sheets.</p>
+        <div class="field-group">
+          <span class="export-title">¿De qué canales?</span>
+          <div class="export-options" id="export-scope"></div>
+        </div>
+        <div class="field-group">
+          <span class="export-title">¿Qué etapas?</span>
+          <div class="export-options" id="export-etapas"></div>
+        </div>
+        <div class="settings-status" id="export-status"></div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="leads-export-cancel">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="leads-export-go">Exportar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="customfield-overlay" class="overlay" hidden>
     <div class="modal modal-sm">
       <div class="drawer-header">

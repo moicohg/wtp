@@ -3707,6 +3707,115 @@ leadsKanbanEl.addEventListener('drop', (ev) => {
   moveLeadToEtapa(id, col.dataset.etapa);
 });
 
+// ── Exportar leads a CSV ─────────────────────────────────────────────────────
+// Descarga los leads que el usuario puede ver (las políticas recortan por empresa y por asesor),
+// del canal abierto o de todos, y de todas las etapas o solo las elegidas.
+
+const exportOverlay = document.getElementById('leads-export-overlay');
+const exportScopeEl = document.getElementById('export-scope');
+const exportEtapasEl = document.getElementById('export-etapas');
+const exportStatusEl = document.getElementById('export-status');
+const exportGoBtn = document.getElementById('leads-export-go');
+const exportState = { rows: [], scope: 'canal', etapas: new Set() };
+
+const exportScoped = () => exportState.rows.filter((r) => exportState.scope === 'todos' || r.vendor_id === state.vendorId);
+
+function renderExportOptions() {
+  const scoped = exportScoped();
+  const counts = new Map(ETAPA_OPTIONS.map((o) => [o.value, 0]));
+  for (const r of scoped) counts.set(leadEtapa(r), counts.get(leadEtapa(r)) + 1);
+  const vendor = state.vendors.find((v) => v.id === state.vendorId);
+
+  exportScopeEl.innerHTML = `
+    <label><input type="radio" name="export-scope" value="canal" ${exportState.scope === 'canal' ? 'checked' : ''} ${state.vendorId ? '' : 'disabled'} /> Solo este canal${vendor ? ` (${escapeHtml(vendor.name)})` : ''}</label>
+    <label><input type="radio" name="export-scope" value="todos" ${exportState.scope === 'todos' ? 'checked' : ''} /> Todos los canales</label>`;
+
+  const all = ETAPA_OPTIONS.every((o) => exportState.etapas.has(o.value));
+  exportEtapasEl.innerHTML =
+    `<label><input type="checkbox" data-export-all ${all ? 'checked' : ''} /> <b>Todas las etapas</b> <span class="muted">(${scoped.length})</span></label>` +
+    ETAPA_OPTIONS.map(
+      (o) => `<label><input type="checkbox" data-export-etapa="${o.value}" ${exportState.etapas.has(o.value) ? 'checked' : ''} /> ${o.icon} ${escapeHtml(o.label)} <span class="muted">(${counts.get(o.value)})</span></label>`
+    ).join('');
+
+  const n = scoped.filter((r) => exportState.etapas.has(leadEtapa(r))).length;
+  exportGoBtn.textContent = `Exportar ${n} lead${n === 1 ? '' : 's'}`;
+  exportGoBtn.disabled = n === 0;
+}
+
+async function openLeadsExport() {
+  exportState.scope = state.vendorId ? 'canal' : 'todos';
+  exportState.etapas = new Set(ETAPA_OPTIONS.map((o) => o.value));
+  exportState.rows = [];
+  exportStatusEl.textContent = 'Cargando leads…';
+  exportGoBtn.disabled = true;
+  exportOverlay.hidden = false;
+  const { data, error } = await supabase.from('prospect_inbox').select('*').order('updated_at', { ascending: false });
+  if (error) {
+    exportStatusEl.textContent = `Error: ${error.message}`;
+    exportStatusEl.className = 'settings-status err';
+    return;
+  }
+  exportState.rows = data ?? [];
+  exportStatusEl.textContent = '';
+  exportStatusEl.className = 'settings-status';
+  renderExportOptions();
+}
+
+// Una celda que empieza con = + - @ se abriría como fórmula en Excel; se neutraliza con un apóstrofo.
+const csvCell = (v) => {
+  let t = v == null ? '' : String(v);
+  if (/^[=+\-@\t\r]/.test(t) && !/^\+?\d[\d\s().-]*$/.test(t)) t = `'${t}`;
+  return /[",\n\r;]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+};
+const limaStamp = (iso) => (iso ? new Date(iso).toLocaleString('sv-SE', { timeZone: 'America/Lima' }).slice(0, 16) : '');
+
+function downloadLeadsCsv() {
+  const rows = exportScoped().filter((r) => exportState.etapas.has(leadEtapa(r)));
+  const header = ['Nombre', 'Teléfono', 'Canal', 'Asesor', 'Etapa', 'Temperatura', 'Score', 'Prioridad', 'Origen', 'Detalle del origen', 'Zona', 'Presupuesto', 'Moneda', 'Operación', 'Inmueble', 'Paso', 'Etiquetas', 'Notas', 'Creado', 'Actualizado'];
+  const lines = rows.map((r) =>
+    [
+      r.nombre, r.phone, r.vendor_name, r.handled_by_name,
+      (ETAPA_OPTIONS.find((o) => o.value === leadEtapa(r)) ?? ETAPA_OPTIONS[0]).label,
+      r.label, r.score, r.prioridad, r.origen ? origenMeta(r.origen).label : '', r.origen_detalle,
+      r.zona, r.presupuesto, r.presupuesto != null ? r.presupuesto_moneda : '', r.tipo_operacion, r.tipo_inmueble,
+      r.conversation_step, (r.etiquetas ?? []).join(' | '), r.notas, limaStamp(r.created_at), limaStamp(r.updated_at),
+    ]
+      .map(csvCell)
+      .join(',')
+  );
+  // BOM para que Excel respete los acentos.
+  const blob = new Blob(['\ufeff' + [header.map(csvCell).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const vendor = state.vendors.find((v) => v.id === state.vendorId);
+  const scopeName = exportState.scope === 'canal' && vendor ? vendor.name : 'todos-los-canales';
+  const slug = scopeName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `leads-${slug}-${limaToday()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  exportOverlay.hidden = true;
+}
+
+document.getElementById('leads-export-btn').addEventListener('click', openLeadsExport);
+document.getElementById('leads-export-close').addEventListener('click', () => (exportOverlay.hidden = true));
+document.getElementById('leads-export-cancel').addEventListener('click', () => (exportOverlay.hidden = true));
+exportOverlay.addEventListener('click', (ev) => {
+  if (ev.target === exportOverlay) exportOverlay.hidden = true;
+});
+exportOverlay.addEventListener('change', (ev) => {
+  const t = ev.target;
+  if (t.name === 'export-scope') exportState.scope = t.value;
+  else if (t.matches('[data-export-all]')) exportState.etapas = new Set(t.checked ? ETAPA_OPTIONS.map((o) => o.value) : []);
+  else if (t.matches('[data-export-etapa]')) {
+    if (t.checked) exportState.etapas.add(t.dataset.exportEtapa);
+    else exportState.etapas.delete(t.dataset.exportEtapa);
+  } else return;
+  renderExportOptions();
+});
+exportGoBtn.addEventListener('click', downloadLeadsCsv);
+
 // ── Drawer: detalle + conversación ──────────────────────────────────────────
 
 async function openDrawer(prospectOrId) {
@@ -6457,6 +6566,7 @@ document.addEventListener('keydown', (ev) => {
   if (!orgOverlay.hidden) orgOverlay.hidden = true;
   if (!statusPillPanel.hidden) closeStatusPanel();
   if (!customfieldOverlay.hidden) customfieldOverlay.hidden = true;
+  if (!exportOverlay.hidden) exportOverlay.hidden = true;
   if (!productOverlay.hidden) closeProductModal();
   if (!autofillOverlay.hidden) closeAutofillModal();
   if (!catalogOverlay.hidden) closeCatalogModal();
