@@ -7,10 +7,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260920_3" />
+  <link rel="stylesheet" href="style.css?v=20261014_1" />
 </head>
 <body>
   <div class="shell" hidden>
+    <div class="nav-backdrop" id="nav-backdrop"></div>
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-badge-icon">
@@ -87,6 +88,7 @@
       <div id="channel-alert" class="channel-alert" hidden></div>
       <div id="plan-banner" class="plan-banner" hidden></div>
       <header class="topbar">
+        <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Abrir menú"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
         <h2 id="topbar-title">Canales</h2>
         <div class="topbar-actions">
           <div class="topbar-actions-group" data-section-group="leads" hidden>
@@ -715,6 +717,7 @@
             </div>
             <div class="channel-thread" id="channel-thread" hidden>
               <div class="channel-thread-header">
+                <button type="button" class="ct-back" id="ct-back" aria-label="Volver a los chats">←</button>
                 <div class="avatar" id="ct-avatar">?</div>
                 <div class="channel-thread-heading">
                   <strong id="ct-name">—</strong>
@@ -2138,6 +2141,6 @@
     </div>
   </div>
 
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=20261014_1"></script>
 </body>
 </html>

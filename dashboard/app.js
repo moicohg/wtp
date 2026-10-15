@@ -930,7 +930,14 @@ sidenavEl.addEventListener('click', (ev) => {
   const btn = ev.target.closest('.sidenav-item, .sidenav-subitem');
   if (!btn || !btn.dataset.section) return;
   setSection(btn.dataset.section);
+  document.body.classList.remove('nav-open');
 });
+
+// Celular: el menú lateral es un cajón que se abre con el botón ☰
+document.getElementById('nav-toggle').addEventListener('click', () => document.body.classList.toggle('nav-open'));
+document.getElementById('nav-backdrop').addEventListener('click', () => document.body.classList.remove('nav-open'));
+document.getElementById('ct-back').addEventListener('click', () => closeChannelThread());
+document.querySelector('.sidebar-footer').addEventListener('click', () => document.body.classList.remove('nav-open'));
 
 // ── Carga de datos ───────────────────────────────────────────────────────────
 
