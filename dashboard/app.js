@@ -93,7 +93,7 @@ const flagEmoji = (iso) => String.fromCodePoint(...[...iso].map((c) => 0x1f1e6 +
 
 function fillDialSelects() {
   const options = COUNTRY_CODES.map((c) => `<option value="${c.dial}" ${c.iso === 'PE' ? 'selected' : ''}>${flagEmoji(c.iso)} ${c.name} +${c.dial}</option>`).join('');
-  document.querySelectorAll('#login-dial, #agent-dial').forEach((sel) => (sel.innerHTML = options));
+  document.querySelectorAll('#login-dial, #agent-dial, #nc-dial').forEach((sel) => (sel.innerHTML = options));
 }
 
 // ── Roles y permisos ─────────────────────────────────────────────────────────
@@ -4625,6 +4625,75 @@ async function callSendMessage(payload) {
   renderChannelThread(messages);
 }
 
+// ── Nuevo chat: escribir a un número ─────────────────────────────────────────
+// send-message crea el lead (o reutiliza el del mismo número en el canal) y manda el primer mensaje.
+// Con Meta solo funciona si el cliente escribió en las últimas 24 h; con canal QR no hay esa regla.
+
+const newChatOverlay = document.getElementById('newchat-overlay');
+const newChatForm = document.getElementById('newchat-form');
+const newChatStatus = document.getElementById('newchat-status');
+
+function openNewChat() {
+  const vendors = visibleVendors();
+  if (!vendors.length) return alert('No tienes canales disponibles para escribir.');
+  document.getElementById('nc-vendor').innerHTML = vendors
+    .map((v) => `<option value="${v.id}" ${v.id === state.channelVendorId ? 'selected' : ''}>${escapeHtml(v.name)}</option>`)
+    .join('');
+  newChatForm.reset();
+  document.getElementById('nc-vendor').value = vendors.some((v) => v.id === state.channelVendorId) ? state.channelVendorId : vendors[0].id;
+  newChatStatus.textContent = '';
+  newChatStatus.className = 'settings-status';
+  newChatOverlay.hidden = false;
+  newChatForm.elements.phone.focus();
+}
+
+async function submitNewChat(ev) {
+  ev.preventDefault();
+  const f = newChatForm.elements;
+  const digits = f.phone.value.replace(/\D/g, '').replace(/^0+/, '');
+  if (digits.length < 6) {
+    newChatStatus.textContent = 'Escribe el número completo del cliente.';
+    newChatStatus.className = 'settings-status err';
+    return;
+  }
+  const submit = document.getElementById('newchat-submit');
+  submit.disabled = true;
+  newChatStatus.textContent = 'Enviando…';
+  newChatStatus.className = 'settings-status';
+  try {
+    const resp = await fetch(`${FUNCTIONS_URL}/send-message`, {
+      method: 'POST',
+      headers: await authHeaders(),
+      body: JSON.stringify({
+        vendor_id: f.vendor_id.value,
+        phone: `+${f.dial.value}${digits}`,
+        name: f.name.value.trim(),
+        text: f.text.value.trim(),
+        ia_enabled: f.ia_enabled.checked,
+      }),
+    });
+    const json = await resp.json();
+    if (!resp.ok || json.error) throw new Error(json.error || `HTTP ${resp.status}`);
+    newChatOverlay.hidden = true;
+    if (state.section !== `vendor:${f.vendor_id.value}`) await setSection(`vendor:${f.vendor_id.value}`);
+    await refreshChannelProspects(f.vendor_id.value);
+    await openChannelProspect(json.prospect_id);
+  } catch (err) {
+    newChatStatus.textContent = `No se pudo enviar: ${err.message}`;
+    newChatStatus.className = 'settings-status err';
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+document.getElementById('new-chat-btn').addEventListener('click', openNewChat);
+document.getElementById('newchat-close').addEventListener('click', () => (newChatOverlay.hidden = true));
+document.getElementById('newchat-cancel').addEventListener('click', () => (newChatOverlay.hidden = true));
+newChatOverlay.addEventListener('click', (ev) => {
+  if (ev.target === newChatOverlay) newChatOverlay.hidden = true;
+});
+newChatForm.addEventListener('submit', submitNewChat);
+
 async function sendChannelMessage(ev) {
   ev.preventDefault();
   const text = channelComposerInput.value.trim();
@@ -6567,6 +6636,7 @@ document.addEventListener('keydown', (ev) => {
   if (!statusPillPanel.hidden) closeStatusPanel();
   if (!customfieldOverlay.hidden) customfieldOverlay.hidden = true;
   if (!exportOverlay.hidden) exportOverlay.hidden = true;
+  if (!newChatOverlay.hidden) newChatOverlay.hidden = true;
   if (!productOverlay.hidden) closeProductModal();
   if (!autofillOverlay.hidden) closeAutofillModal();
   if (!catalogOverlay.hidden) closeCatalogModal();

@@ -96,7 +96,7 @@ wtp/
 | Agenda | Cola de leads priorizada, "siguiente mejor acción", citas del día y citas por confirmar (ver [Agenda inteligente](#agenda-inteligente)) | `agenda.view_priority_queue` |
 | Bandeja global | Todos los chats de la empresa con filtros por canal, etapa, etiqueta, vendedor y fecha | `leads.view` |
 | Canales | Lista de canales con filtros, carga por asesor, uso del plan y panel de detalle del canal seleccionado | `config.manage_channels` / `leads.view` |
-| Canales › (cada canal) | Chat de 3 paneles: contactos, conversación e "Info del cliente" | `leads.view` |
+| Canales › (cada canal) | Chat de 3 paneles: contactos, conversación e "Info del cliente". El botón **＋ Nuevo chat** escribe a un cliente con solo su número: crea el lead (o reutiliza el del mismo número) y envía el primer mensaje con `send-message`; la IA queda apagada en ese chat salvo que se marque. Con un canal Meta solo funciona si el cliente escribió en las últimas 24 h | `leads.view` (+ `leads.create_contacts` para Nuevo chat) |
 | Productos | Catálogo de productos con precios (PEN/USD) y autocompletado por IA | `config.products` |
 | Catálogo IA | Archivos que la IA puede mencionar, asignados a uno o más canales | `config.products` |
 | Leads | Prospectos por canal con KPIs y drawer de detalle, en tres vistas que se eligen arriba a la derecha: **Tabla**, **Lista** y **Kanban** (columnas por etapa; arrastrar una tarjeta cambia la etapa del lead). Se recuerda la vista elegida. El botón **Exportar** descarga un CSV (abre en Excel o Google Sheets) de este canal o de todos, y de todas las etapas o solo las elegidas | `leads.view` |

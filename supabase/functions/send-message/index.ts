@@ -1,4 +1,5 @@
-import { admin as supabase, getCaller, handleError, HttpError, json, preflight } from '../_shared/auth.ts';
+import { admin as supabase, getCaller, handleError, HttpError, json, preflight, requirePermission } from '../_shared/auth.ts';
+import { normalizeE164 } from '../_shared/phone.ts';
 
 // ── Envío manual de mensajes desde el dashboard ───────────────────────────────
 // Contraparte "saliente" de whatsapp-handler/meta-webhook: esas dos funciones
@@ -7,6 +8,11 @@ import { admin as supabase, getCaller, handleError, HttpError, json, preflight }
 // del canal. media_url debe ser una URL pública (el bucket "chat-media" ya lo es).
 // Exige sesión: el usuario debe poder ver ese chat (misma regla que
 // can_access_prospect() en la base de datos).
+//
+// Iniciar un chat nuevo: en vez de prospect_id se manda vendor_id + phone (y opcional name,
+// ia_enabled). Requiere leads.create_contacts, crea el lead (o reutiliza el que ya exista con ese
+// número en el canal) y envía el primer mensaje. Si el envío falla y el lead se acaba de crear, se
+// borra para no dejar contactos vacíos. La IA queda apagada en esos chats salvo que se pida.
 
 type MediaType = 'image' | 'video' | 'audio' | 'document';
 
@@ -108,6 +114,10 @@ Deno.serve(async (req: Request) => {
 
     let body: {
       prospect_id?: string;
+      vendor_id?: string;
+      phone?: string;
+      name?: string;
+      ia_enabled?: boolean;
       text?: string;
       media_url?: string;
       media_type?: MediaType;
@@ -119,12 +129,58 @@ Deno.serve(async (req: Request) => {
       throw new HttpError(400, 'Payload inválido');
     }
 
-    const prospectId = body.prospect_id;
+    let prospectId = body.prospect_id;
+    let createdProspect = false;
     const text = body.text?.trim() ?? '';
     const mediaUrl = body.media_url;
     const mediaType = body.media_type;
     const fileName = body.file_name;
 
+    if (!prospectId) {
+      requirePermission(caller, 'leads.create_contacts');
+      if (!body.vendor_id || !body.phone) throw new HttpError(400, 'Falta el canal o el número');
+      if (!text) throw new HttpError(400, 'Escribe el primer mensaje');
+      const e164 = normalizeE164(body.phone);
+      if (!e164) throw new HttpError(400, 'El número no es válido. Incluye el código de país.');
+      const phone = e164.slice(1);
+
+      const { data: vend } = await supabase
+        .from('vendors')
+        .select('organization_id, assigned_agent_id')
+        .eq('id', body.vendor_id)
+        .single();
+      if (!vend || vend.organization_id !== caller.organizationId) throw new HttpError(404, 'Canal no encontrado');
+      if (!caller.isAdmin && vend.assigned_agent_id !== caller.agentId) throw new HttpError(403, 'No tienes acceso a este canal');
+
+      const { data: existing } = await supabase
+        .from('prospects')
+        .select('id, handled_by_agent_id')
+        .eq('vendor_id', body.vendor_id)
+        .eq('phone', phone)
+        .maybeSingle();
+      if (existing) {
+        const mineExisting = caller.agentId !== null && (existing.handled_by_agent_id === caller.agentId || vend.assigned_agent_id === caller.agentId);
+        if (!caller.isAdmin && !mineExisting) throw new HttpError(403, 'Ese número ya es un lead de otro asesor');
+        prospectId = existing.id;
+      } else {
+        const { data: created, error: createError } = await supabase
+          .from('prospects')
+          .insert({
+            vendor_id: body.vendor_id,
+            phone,
+            nombre: (body.name ?? '').trim().slice(0, 120),
+            conversation_step: 'paso_0',
+            ia_enabled: body.ia_enabled === true,
+            // Un asesor conserva el chat que inicia aunque el reparto automático esté activo.
+            handled_by_agent_id: caller.isAdmin ? null : caller.agentId,
+          })
+          .select('id')
+          .single();
+        if (createError || !created) throw new HttpError(500, `No se pudo crear el contacto: ${createError?.message}`);
+        prospectId = created.id;
+        createdProspect = true;
+      }
+    }
     if (!prospectId || (!text && !mediaUrl)) throw new HttpError(400, 'Faltan prospect_id y/o text/media_url');
 
     const { data: prospect, error: prospectError } = await supabase
@@ -169,7 +225,15 @@ Deno.serve(async (req: Request) => {
       }
     } catch (err) {
       console.error('Error enviando mensaje:', err);
-      return json({ error: err instanceof Error ? err.message : 'Error enviando el mensaje' }, 502);
+      if (createdProspect) await supabase.from('prospects').delete().eq('id', p.id);
+      const raw = err instanceof Error ? err.message : 'Error enviando el mensaje';
+      const msg =
+        raw.includes('"exists":false')
+          ? 'Ese número no tiene WhatsApp. Revisa el código de país y el número.'
+          : v.channel_type === 'meta' && raw.includes('131047')
+          ? 'WhatsApp Cloud API no deja escribir con texto libre a alguien que no te escribió en las últimas 24 h. Usa un canal QR o una plantilla aprobada.'
+          : raw;
+      return json({ error: msg }, 502);
     }
 
     // organization_id lo pone el trigger messages_set_org a partir del prospecto.
@@ -180,7 +244,7 @@ Deno.serve(async (req: Request) => {
       .single();
     if (saveError) return json({ error: `Mensaje enviado pero no se pudo guardar: ${saveError.message}` }, 500);
 
-    return json({ success: true, message: saved });
+    return json({ success: true, message: saved, prospect_id: p.id, created: createdProspect });
   } catch (err) {
     return handleError(err);
   }

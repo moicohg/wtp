@@ -697,6 +697,7 @@
               <button class="chip is-active" data-channel-tab="chats" type="button">Chats</button>
               <button class="chip" data-channel-tab="archivados" type="button">Archivados</button>
             </div>
+            <button type="button" class="btn btn-primary channel-new-chat-btn" id="new-chat-btn" data-perm="leads.create_contacts">＋ Nuevo chat</button>
             <div class="inbox-search-wrap">
               <span class="inbox-search-icon">🔍</span>
               <input id="channel-search" type="search" placeholder="Buscar conversaciones…" />
@@ -1477,6 +1478,46 @@
   </div>
 
   <!-- Modal: crear campo personalizado (definición global, valores por chat) -->
+  <div id="newchat-overlay" class="overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="drawer-header">
+        <h2>💬 Nuevo chat</h2>
+        <button class="btn-icon" id="newchat-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="newchat-form" class="settings-form">
+        <p class="muted" style="margin:-8px 0 0;">Escribe a un cliente con su número y la conversación queda lista en el canal.</p>
+        <label>
+          Canal desde el que escribes
+          <select name="vendor_id" id="nc-vendor" required></select>
+        </label>
+        <div class="field-group">
+          <span class="export-title">Número del cliente</span>
+          <div class="nc-phone">
+            <select name="dial" id="nc-dial" aria-label="Código de país"></select>
+            <input name="phone" type="tel" placeholder="987 654 321" autocomplete="off" required />
+          </div>
+        </div>
+        <label>
+          Nombre <span class="hint">(opcional)</span>
+          <input name="name" type="text" maxlength="120" placeholder="Ej: María Pérez" />
+        </label>
+        <label>
+          Primer mensaje
+          <textarea name="text" rows="3" placeholder="Hola, te escribo de…" required></textarea>
+        </label>
+        <label class="cf-required-box">
+          <input type="checkbox" name="ia_enabled" />
+          <span><strong>Dejar que la IA continúe la conversación</strong><span class="hint hint-block">Apagado: solo tú respondes en este chat.</span></span>
+        </label>
+        <div class="settings-status" id="newchat-status"></div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="newchat-cancel">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="newchat-submit">Enviar y abrir chat</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="leads-export-overlay" class="overlay" hidden>
     <div class="modal modal-sm">
       <div class="drawer-header">

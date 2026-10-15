@@ -3243,3 +3243,8 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 .settings-form .export-options label:first-child { grid-column: 1 / -1; }
 .settings-form .export-options input { width: auto; margin: 0; flex-shrink: 0; }
 #export-scope.export-options { grid-template-columns: 1fr; }
+
+/* ── Nuevo chat ─────────────────────────────────────────────────────────── */
+.channel-new-chat-btn { margin: 0 12px 10px; width: calc(100% - 24px); justify-content: center; }
+.nc-phone { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 8px; margin-top: 6px; }
+.nc-phone select, .nc-phone input { min-width: 0; }
