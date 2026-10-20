@@ -5852,10 +5852,12 @@ function renderOrgsTable() {
           <td>${(o.admins ?? []).map((a) => escapeHtml(a.email)).join('<br>') || '—'}</td>
           <td>${o.is_active ? '<span class="role-badge role-badge-ok">Activa</span>' : '<span class="role-badge role-badge-off">Desactivada</span>'}</td>
           <td>
-            <button type="button" class="btn-icon js-org-limit" data-id="${o.id}" title="Cambiar límites de canales y vendedores" aria-label="Cambiar límites de canales y vendedores">🔢</button>
-            <button type="button" class="btn-icon js-org-add-user" data-id="${o.id}" title="Nuevo usuario" aria-label="Nuevo usuario">👤➕</button>
-            ${isMine ? '' : `<button type="button" class="btn-icon js-org-toggle" data-id="${o.id}" title="${o.is_active ? 'Desactivar' : 'Activar'}" aria-label="${o.is_active ? 'Desactivar' : 'Activar'}">${o.is_active ? '⏸' : '▶️'}</button>`}
-            <button type="button" class="btn-icon js-org-expand" data-id="${o.id}" aria-label="Ver usuarios">${expanded ? '▾' : '▸'}</button>
+            <div class="org-actions">
+              <button type="button" class="btn-org js-org-limit" data-id="${o.id}" title="Cambiar el máximo de canales y vendedores">Límites</button>
+              <button type="button" class="btn-org js-org-add-user" data-id="${o.id}" title="Crear un administrador o vendedor en esta empresa">+ Usuario</button>
+              ${isMine ? '' : `<button type="button" class="btn-org ${o.is_active ? 'btn-org-danger' : 'btn-org-ok'} js-org-toggle" data-id="${o.id}" title="${o.is_active ? 'Bloquear el acceso de esta empresa' : 'Volver a habilitar esta empresa'}">${o.is_active ? 'Desactivar' : 'Activar'}</button>`}
+              <button type="button" class="btn-org js-org-expand" data-id="${o.id}" title="Mostrar u ocultar los usuarios de la empresa">Usuarios ${expanded ? '▾' : '▸'}</button>
+            </div>
           </td>
         </tr>
         ${usersRow}

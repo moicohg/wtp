@@ -3304,3 +3304,9 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
   .kanban-col { flex-basis: 78vw; max-height: none; }
   .kpis { grid-template-columns: repeat(2, 1fr); }
 }
+
+.org-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn-org { border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.btn-org:hover { background: var(--surface-hover); }
+.btn-org-danger { color: #c0392b; }
+.btn-org-ok { color: var(--border-focus); }
