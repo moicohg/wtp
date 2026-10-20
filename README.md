@@ -389,6 +389,7 @@ Secrets de las Edge Functions. Configurar con `supabase secrets set --env-file .
 | `META_APP_ID`, `META_APP_SECRET`, `META_VERIFY_TOKEN` | Canal Meta Cloud API |
 | `META_SIGNATURE_MODE` | `enforce` hace que `meta-webhook` rechace (401) los POST cuya firma `X-Hub-Signature-256` (HMAC-SHA256 del cuerpo con `META_APP_SECRET`) no coincida. Sin él solo registra el aviso `firma inválida o ausente` y procesa igual: se deja así hasta confirmar en los logs, con tráfico real, que `META_APP_SECRET` es el de la app |
 | `META_REGISTER_PIN` | PIN de 6 dígitos con el que `meta-exchange` registra el número al conectar con "Continuar con Facebook". Sin él se omite el registro |
+| `DELETE_ORG_PIN` | PIN que exige `admin-users` (acción `delete_organization`, solo super-admin) para eliminar una empresa con todos sus datos |
 | `OPENAI_API_KEY` | `product-autocomplete` y `catalog-analyze-prompt` (clave de la plataforma; la IA de cada canal usa la suya) |
 | `BURST_WAIT_MS` | Opcional. Espera en milisegundos para agrupar mensajes en ráfaga (6000 por defecto; 0 la desactiva) |
 | `CRON_SECRET` | Autentica a pg_cron ante `purge-media`, `lead-alerts`, `automation-runner` y `metrics-alerts` (mismo valor que el secreto `cron_secret` de Vault) |

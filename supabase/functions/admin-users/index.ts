@@ -219,6 +219,27 @@ async function setOrganizationActive(caller: Caller, body: Body) {
   return json({ success: true });
 }
 
+async function deleteOrganization(caller: Caller, body: Body) {
+  requireSuperAdmin(caller);
+  const id = requireStr(body, 'organization_id', 'organization_id');
+  const pin = Deno.env.get('DELETE_ORG_PIN');
+  if (!pin) throw new HttpError(500, 'Falta configurar DELETE_ORG_PIN en el servidor');
+  if (str(body, 'pin') !== pin) throw new HttpError(403, 'PIN incorrecto');
+  if (id === caller.organizationId) throw new HttpError(400, 'No puedes eliminar tu propia empresa');
+  const org = await admin.from('organizations').select('id, name').eq('id', id).maybeSingle();
+  if (org.error) throw new HttpError(500, org.error.message);
+  if (!org.data) throw new HttpError(404, 'Empresa no encontrada');
+  const users = await admin.from('profiles').select('id').eq('organization_id', id);
+  if (users.error) throw new HttpError(500, users.error.message);
+  for (const u of users.data ?? []) {
+    const { error } = await admin.auth.admin.deleteUser(u.id); // profiles cae en cascada
+    if (error) throw new HttpError(500, error.message);
+  }
+  const { error } = await admin.rpc('delete_organization', { p_org: id });
+  if (error) throw new HttpError(500, error.message);
+  return json({ success: true });
+}
+
 async function setOrganizationLimits(caller: Caller, body: Body) {
   requireSuperAdmin(caller);
   const id = requireStr(body, 'organization_id', 'organization_id');
@@ -422,6 +443,7 @@ Deno.serve(async (req: Request) => {
       case 'list_organizations':      return await listOrganizations(caller);
       case 'get_usage':               return await getUsage(caller);
       case 'set_organization_active': return await setOrganizationActive(caller, body);
+      case 'delete_organization':     return await deleteOrganization(caller, body);
       case 'set_organization_limits': return await setOrganizationLimits(caller, body);
       case 'create_user':             return await createUser(caller, body);
       case 'update_user':             return await updateUser(caller, body);

@@ -5856,6 +5856,7 @@ function renderOrgsTable() {
               <button type="button" class="btn-org js-org-limit" data-id="${o.id}" title="Cambiar el máximo de canales y vendedores">Límites</button>
               <button type="button" class="btn-org js-org-add-user" data-id="${o.id}" title="Crear un administrador o vendedor en esta empresa">+ Usuario</button>
               ${isMine ? '' : `<button type="button" class="btn-org ${o.is_active ? 'btn-org-danger' : 'btn-org-ok'} js-org-toggle" data-id="${o.id}" title="${o.is_active ? 'Bloquear el acceso de esta empresa' : 'Volver a habilitar esta empresa'}">${o.is_active ? 'Desactivar' : 'Activar'}</button>`}
+              ${isMine || !state.me.isSuperAdmin ? '' : `<button type="button" class="btn-org btn-org-danger js-org-delete" data-id="${o.id}" title="Borrar la empresa y todos sus datos para siempre">Eliminar</button>`}
               <button type="button" class="btn-org js-org-expand" data-id="${o.id}" title="Mostrar u ocultar los usuarios de la empresa">Usuarios ${expanded ? '▾' : '▸'}</button>
             </div>
           </td>
@@ -5868,7 +5869,7 @@ function renderOrgsTable() {
 
 orgsTbody.addEventListener('click', async (ev) => {
   if (handleUserActionClick(ev)) return;
-  const btn = ev.target.closest('.js-org-limit, .js-org-add-user, .js-org-toggle, .js-org-expand');
+  const btn = ev.target.closest('.js-org-limit, .js-org-add-user, .js-org-toggle, .js-org-expand, .js-org-delete');
   if (!btn) return;
   const org = state.organizations.find((o) => o.id === btn.dataset.id);
   if (!org) return;
@@ -5885,6 +5886,25 @@ orgsTbody.addEventListener('click', async (ev) => {
   }
   if (btn.classList.contains('js-org-limit')) {
     openOrgLimits(org);
+    return;
+  }
+  if (btn.classList.contains('js-org-delete')) {
+    const typed = prompt(`Vas a eliminar la empresa "${org.name}" con todos sus usuarios, canales, leads y chats. No se puede deshacer.\n\nEscribe el nombre de la empresa para confirmar:`);
+    if (typed === null) return;
+    if (typed.trim() !== org.name) {
+      alert('El nombre no coincide. No se eliminó nada.');
+      return;
+    }
+    const pin = prompt('Ingresa el PIN de eliminación:');
+    if (!pin) return;
+    try {
+      await callAdminUsers('delete_organization', { organization_id: org.id, pin });
+    } catch (err) {
+      alert(`No se pudo eliminar: ${err.message}`);
+      return;
+    }
+    state.expandedOrgIds.delete(org.id);
+    await loadOrganizations();
     return;
   }
   if (btn.classList.contains('js-org-toggle')) {
