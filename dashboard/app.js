@@ -702,6 +702,97 @@ const fmtDate = (iso) => {
 const escapeHtml = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// ── Avisos y diálogos propios (reemplazan alert/confirm/prompt del navegador) ──
+const TOAST_ICONS = { ok: '✓', err: '!', info: 'i' };
+
+function toast(message, type = 'info') {
+  let host = document.getElementById('toast-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'toast-host';
+    document.body.appendChild(host);
+  }
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.setAttribute('role', type === 'err' ? 'alert' : 'status');
+  el.innerHTML = `<span class="toast-icon">${TOAST_ICONS[type]}</span><span class="toast-text">${escapeHtml(message)}</span>`;
+  host.appendChild(el);
+  const close = () => {
+    el.classList.add('toast-out');
+    setTimeout(() => el.remove(), 200);
+  };
+  el.addEventListener('click', close);
+  setTimeout(close, type === 'err' ? 6000 : 3000);
+}
+
+// Sustituto directo de alert(): deduce el tipo por el texto.
+function notify(message) {
+  const text = String(message ?? '');
+  toast(text.replace(/\s*✓$/, ''), /✓/.test(text) ? 'ok' : /^(No se pudo|Error)/.test(text) ? 'err' : 'info');
+}
+
+function openDialog({ title, message, input, okLabel, danger }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.innerHTML = `
+      <div class="modal modal-sm dialog">
+        <div class="drawer-header"><h2>${escapeHtml(title)}</h2></div>
+        <form class="settings-form" autocomplete="off">
+          <p class="dialog-message">${escapeHtml(message)}</p>
+          ${input ? `<input class="dialog-input" name="value" type="${input.type || 'text'}" placeholder="${escapeHtml(input.placeholder || '')}" />` : ''}
+          <div class="dialog-actions">
+            <button type="button" class="btn btn-ghost" data-cancel>Cancelar</button>
+            <button type="submit" class="btn btn-primary${danger ? ' btn-org-danger-solid' : ''}">${escapeHtml(okLabel)}</button>
+          </div>
+        </form>
+      </div>`;
+    const done = (value) => {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve(value);
+    };
+    const form = overlay.querySelector('form');
+    const onKey = (ev) => {
+      if (ev.key === 'Escape') done(input ? null : false);
+    };
+    document.addEventListener('keydown', onKey);
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) done(input ? null : false);
+    });
+    overlay.querySelector('[data-cancel]').addEventListener('click', () => done(input ? null : false));
+    form.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      done(input ? form.elements.value.value : true);
+    });
+    document.body.appendChild(overlay);
+    (form.elements.value || form.querySelector('button[type=submit]')).focus();
+  });
+}
+
+// Sustituto de confirm(): devuelve una promesa con true/false.
+function confirmDialog(message) {
+  const verb = (message.match(/^¿?([A-Za-zÁÉÍÓÚáéíóúñ]+)/)?.[1] ?? 'Aceptar');
+  const danger = /^¿?(Eliminar|Desactivar|Cancelar|Sacar)/.test(message);
+  const okLabel = verb === 'Cerrar' ? 'Cerrar sesión' : verb;
+  return openDialog({ title: danger ? 'Confirmar acción' : 'Confirmar', message, okLabel, danger });
+}
+
+// Sustituto de prompt(): devuelve el texto o null si se cancela.
+function promptDialog(message, { type = 'text', okLabel = 'Aceptar' } = {}) {
+  return openDialog({ title: message, message: '', input: { type }, okLabel });
+}
+
+// Cualquier mensaje de estado "… ✓" (Guardado ✓, Configuración guardada ✓…) también sale como aviso flotante.
+new MutationObserver((mutations) => {
+  for (const m of mutations) {
+    const el = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+    if (!el?.classList?.contains('settings-status') && !/status$/.test(el?.id ?? '')) continue;
+    const text = el.textContent.trim();
+    if (text.endsWith('✓')) toast(text.replace(/\s*✓$/, ''), 'ok');
+  }
+}).observe(document.body, { childList: true, characterData: true, subtree: true });
+
 const initials = (name) =>
   (name || '?')
     .trim()
@@ -1105,10 +1196,10 @@ productsListEl?.addEventListener('click', async (ev) => {
   const btn = ev.target.closest('[data-delete-product]');
   if (!btn) return;
   const id = btn.dataset.deleteProduct;
-  if (!confirm('¿Eliminar este producto del catálogo?')) return;
+  if (!await confirmDialog('¿Eliminar este producto del catálogo?')) return;
   const { error } = await supabase.from('products').delete().eq('id', id);
   if (error) {
-    alert(`Error al eliminar: ${error.message}`);
+    notify(`Error al eliminar: ${error.message}`);
     return;
   }
   state.products = state.products.filter((p) => p.id !== id);
@@ -1335,10 +1426,10 @@ catalogListEl?.addEventListener('click', async (ev) => {
   const delBtn = ev.target.closest('[data-delete-catalog]');
   if (delBtn) {
     const id = delBtn.dataset.deleteCatalog;
-    if (!confirm('¿Eliminar este archivo del catálogo?')) return;
+    if (!await confirmDialog('¿Eliminar este archivo del catálogo?')) return;
     const { error } = await supabase.from('catalog_files').delete().eq('id', id);
     if (error) {
-      alert(`Error al eliminar: ${error.message}`);
+      notify(`Error al eliminar: ${error.message}`);
       return;
     }
     state.catalogFiles = state.catalogFiles.filter((f) => f.id !== id);
@@ -1359,10 +1450,10 @@ catalogListEl?.addEventListener('change', (ev) => {
 catalogBulkDeleteBtn?.addEventListener('click', async () => {
   const ids = Array.from(state.catalogSelectedIds);
   if (!ids.length) return;
-  if (!confirm(`¿Eliminar ${ids.length} archivo(s) del catálogo?`)) return;
+  if (!await confirmDialog(`¿Eliminar ${ids.length} archivo(s) del catálogo?`)) return;
   const { error } = await supabase.from('catalog_files').delete().in('id', ids);
   if (error) {
-    alert(`Error al eliminar: ${error.message}`);
+    notify(`Error al eliminar: ${error.message}`);
     return;
   }
   state.catalogFiles = state.catalogFiles.filter((f) => !ids.includes(f.id));
@@ -1536,10 +1627,10 @@ automationsListEl?.addEventListener('click', async (ev) => {
   const delBtn = ev.target.closest('[data-delete-automation]');
   if (!delBtn) return;
   const id = delBtn.dataset.deleteAutomation;
-  if (!confirm('¿Eliminar esta automatización?')) return;
+  if (!await confirmDialog('¿Eliminar esta automatización?')) return;
   const { error } = await supabase.from('automations').delete().eq('id', id);
   if (error) {
-    alert(`Error al eliminar: ${error.message}`);
+    notify(`Error al eliminar: ${error.message}`);
     return;
   }
   state.automations = state.automations.filter((a) => a.id !== id);
@@ -1946,7 +2037,7 @@ async function setAgentStatus(agentId, status) {
   const { error: logError } = await supabase.from('agent_status_log').insert({ agent_id: agentId, status, started_at: now });
   const { error } = await supabase.from('agents').update({ status, status_updated_at: now }).eq('id', agentId);
   if (logError || error) {
-    alert(`Error al cambiar estado: ${(error || logError).message}`);
+    notify(`Error al cambiar estado: ${(error || logError).message}`);
     return;
   }
   const agent = state.agents.find((a) => a.id === agentId);
@@ -2191,7 +2282,7 @@ function renderAvailPhoneList() {
 availPhoneAddBtn?.addEventListener('click', () => {
   const digits = availPhoneInput.value.replace(/\D/g, '');
   if (digits.length < 8 || digits.length > 15) {
-    alert('El número debe tener entre 8 y 15 dígitos, incluyendo el código de país.');
+    notify('El número debe tener entre 8 y 15 dígitos, incluyendo el código de país.');
     return;
   }
   if (!state.availAlertPhones.includes(digits)) state.availAlertPhones.push(digits);
@@ -3445,7 +3536,7 @@ cnTableEl.addEventListener('change', async (ev) => {
   input.disabled = true;
   const { error } = await supabase.from('vendors').update({ ia_enabled: on }).eq('id', v.id);
   if (error) {
-    alert(`No se pudo cambiar la IA del canal: ${error.message}`);
+    notify(`No se pudo cambiar la IA del canal: ${error.message}`);
   } else {
     v.ia_enabled = on;
   }
@@ -3463,7 +3554,7 @@ cnAgentFilterEl.addEventListener('change', () => {
 async function deleteVendor(vendorId) {
   const v = state.vendors.find((x) => x.id === vendorId);
   if (!v) return;
-  if (!confirm(`¿Eliminar el canal “${v.name}”? Se borrarán también sus prospectos y conversaciones.`)) return;
+  if (!await confirmDialog(`¿Eliminar el canal “${v.name}”? Se borrarán también sus prospectos y conversaciones.`)) return;
 
   // Canal QR: también hay que borrar la instancia en Evolution (la función borra ambos).
   try {
@@ -3474,7 +3565,7 @@ async function deleteVendor(vendorId) {
       if (error) throw new Error(error.message);
     }
   } catch (err) {
-    alert(`No se pudo eliminar: ${err.message}`);
+    notify(`No se pudo eliminar: ${err.message}`);
     return;
   }
   if (state.vendorId === vendorId) state.vendorId = null;
@@ -3660,7 +3751,7 @@ async function moveLeadToEtapa(id, etapa) {
   if (error) {
     p.etapa = prev;
     renderTable();
-    alert(`No se pudo mover el lead: ${error.message}`);
+    notify(`No se pudo mover el lead: ${error.message}`);
   }
 }
 
@@ -4594,7 +4685,7 @@ async function updateActiveProspect(fields) {
   if (!prospectId) return;
   const { error } = await supabase.from('prospects').update(fields).eq('id', prospectId);
   if (error) {
-    alert(`No se pudo guardar: ${error.message}`);
+    notify(`No se pudo guardar: ${error.message}`);
     return;
   }
   const p = state.channelProspects.find((x) => x.id === prospectId);
@@ -4642,7 +4733,7 @@ const newChatStatus = document.getElementById('newchat-status');
 
 function openNewChat() {
   const vendors = visibleVendors();
-  if (!vendors.length) return alert('No tienes canales disponibles para escribir.');
+  if (!vendors.length) return notify('No tienes canales disponibles para escribir.');
   document.getElementById('nc-vendor').innerHTML = vendors
     .map((v) => `<option value="${v.id}" ${v.id === state.channelVendorId ? 'selected' : ''}>${escapeHtml(v.name)}</option>`)
     .join('');
@@ -4713,7 +4804,7 @@ async function sendChannelMessage(ev) {
   try {
     await callSendMessage({ prospect_id: prospectId, text });
   } catch (err) {
-    alert(`No se pudo enviar el mensaje: ${err.message}`);
+    notify(`No se pudo enviar el mensaje: ${err.message}`);
     channelComposerInput.value = text;
   } finally {
     channelComposerInput.disabled = false;
@@ -4855,7 +4946,7 @@ async function toggleAudioRecording() {
   }
   if (!state.channelActiveProspectId) return;
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-    alert('Este navegador no soporta grabar audio.');
+    notify('Este navegador no soporta grabar audio.');
     return;
   }
 
@@ -4879,7 +4970,7 @@ async function toggleAudioRecording() {
     state.mediaRecorder = recorder;
     composerMicBtn.classList.add('is-recording');
   } catch (err) {
-    alert(`No se pudo acceder al micrófono: ${err.message}`);
+    notify(`No se pudo acceder al micrófono: ${err.message}`);
   }
 }
 
@@ -4958,7 +5049,7 @@ ctPerfilTrigger.addEventListener('click', (ev) => {
 ctPerfilPanel.addEventListener('click', async (ev) => {
   const addBtn = ev.target.closest('[data-add-perfil]');
   if (addBtn) {
-    const name = prompt('Nombre del nuevo perfil:');
+    const name = await promptDialog('Nombre del nuevo perfil');
     const value = name?.trim();
     if (!value) return;
     ctPerfilPanel.hidden = true;
@@ -5024,7 +5115,7 @@ ctIaToggle.addEventListener('click', async () => {
   const { error } = await supabase.from('prospects').update({ ia_enabled: next }).eq('id', prospectId);
   if (error) {
     setIaToggleUI(p.ia_enabled);
-    alert(`No se pudo cambiar el estado de la IA: ${error.message}`);
+    notify(`No se pudo cambiar el estado de la IA: ${error.message}`);
   }
 });
 
@@ -5610,11 +5701,11 @@ async function createAgent(ev) {
 async function deleteAgent(agentId) {
   const agent = state.agents.find((a) => a.id === agentId);
   if (!agent) return;
-  if (!confirm(`¿Eliminar a ${agent.name}?`)) return;
+  if (!await confirmDialog(`¿Eliminar a ${agent.name}?`)) return;
 
   const { error } = await supabase.from('agents').delete().eq('id', agentId);
   if (error) {
-    alert(`No se pudo eliminar: ${error.message}`);
+    notify(`No se pudo eliminar: ${error.message}`);
     return;
   }
   await loadAgents();
@@ -5631,38 +5722,38 @@ async function refreshUsersViews() {
 
 async function deleteUser(profile) {
   const label = profile.full_name || profile.email;
-  if (!confirm(`¿Eliminar el usuario de ${label}? Ya no podrá iniciar sesión.`)) return;
+  if (!await confirmDialog(`¿Eliminar el usuario de ${label}? Ya no podrá iniciar sesión.`)) return;
   try {
     await callAdminUsers('delete_user', { user_id: profile.id, delete_agent: true });
   } catch (err) {
-    alert(`No se pudo eliminar: ${err.message}`);
+    notify(`No se pudo eliminar: ${err.message}`);
     return;
   }
   await refreshUsersViews();
 }
 
 async function resetUserPassword(profile) {
-  const pwd = prompt(`Nueva contraseña para ${profile.full_name || profile.email} (mínimo 6 caracteres):`);
+  const pwd = await promptDialog(`Nueva contraseña para ${profile.full_name || profile.email} (mínimo 6 caracteres)`, { type: 'password', okLabel: 'Cambiar' });
   if (pwd === null) return;
   if (pwd.length < 6) {
-    alert('La contraseña debe tener al menos 6 caracteres.');
+    notify('La contraseña debe tener al menos 6 caracteres.');
     return;
   }
   try {
     await callAdminUsers('reset_password', { user_id: profile.id, new_password: pwd });
-    alert('Contraseña actualizada ✓');
+    notify('Contraseña actualizada ✓');
   } catch (err) {
-    alert(`No se pudo cambiar la contraseña: ${err.message}`);
+    notify(`No se pudo cambiar la contraseña: ${err.message}`);
   }
 }
 
 async function toggleUserActive(profile) {
   const next = !profile.is_active;
-  if (!next && !confirm(`¿Desactivar a ${profile.full_name || profile.email}? Perderá el acceso de inmediato.`)) return;
+  if (!next && !await confirmDialog(`¿Desactivar a ${profile.full_name || profile.email}? Perderá el acceso de inmediato.`)) return;
   try {
     await callAdminUsers('set_active', { user_id: profile.id, is_active: next });
   } catch (err) {
-    alert(`No se pudo cambiar el estado: ${err.message}`);
+    notify(`No se pudo cambiar el estado: ${err.message}`);
     return;
   }
   await refreshUsersViews();
@@ -5900,11 +5991,11 @@ orgsTbody.addEventListener('click', async (ev) => {
   }
   if (btn.classList.contains('js-org-toggle')) {
     const next = !org.is_active;
-    if (!next && !confirm(`¿Desactivar la empresa ${org.name}? Ninguno de sus usuarios podrá entrar.`)) return;
+    if (!next && !await confirmDialog(`¿Desactivar la empresa ${org.name}? Ninguno de sus usuarios podrá entrar.`)) return;
     try {
       await callAdminUsers('set_organization_active', { organization_id: org.id, is_active: next });
     } catch (err) {
-      alert(`No se pudo cambiar el estado: ${err.message}`);
+      notify(`No se pudo cambiar el estado: ${err.message}`);
       return;
     }
     await loadOrganizations();
@@ -6078,11 +6169,11 @@ rolesTbody.addEventListener('click', (ev) => {
 async function deleteRole(roleId) {
   const role = state.roles.find((r) => r.id === roleId);
   if (!role || role.is_system) return;
-  if (!confirm(`¿Eliminar el rol "${role.name}"?`)) return;
+  if (!await confirmDialog(`¿Eliminar el rol "${role.name}"?`)) return;
 
   const { error } = await supabase.from('roles').delete().eq('id', roleId);
   if (error) {
-    alert(`No se pudo eliminar: ${error.message}`);
+    notify(`No se pudo eliminar: ${error.message}`);
     return;
   }
   await loadRoles();
@@ -6667,8 +6758,8 @@ async function signOutAndReload() {
   location.reload();
 }
 
-document.getElementById('logout-btn').addEventListener('click', () => {
-  if (!confirm('¿Cerrar sesión?')) return;
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  if (!await confirmDialog('¿Cerrar sesión?')) return;
   signOutAndReload();
 });
 document.getElementById('blocked-logout-btn').addEventListener('click', signOutAndReload);
@@ -7047,7 +7138,7 @@ function renderAgendaDay() {
 async function agUpdateProspect(id, patch) {
   const { error } = await supabase.from('prospects').update(patch).eq('id', id);
   if (error) {
-    alert(`No se pudo actualizar: ${error.message}`);
+    notify(`No se pudo actualizar: ${error.message}`);
     return false;
   }
   await loadAgenda();
@@ -7122,7 +7213,7 @@ agQueueEl.addEventListener('click', async (ev) => {
 
 async function agSetApptStatus(id, status) {
   const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
-  if (error) return alert(`No se pudo actualizar la cita: ${error.message}`);
+  if (error) return notify(`No se pudo actualizar la cita: ${error.message}`);
   await loadAgenda();
 }
 
@@ -7135,7 +7226,7 @@ async function onApptClick(ev) {
   if (act === 'confirm') await agSetApptStatus(id, 'confirmada');
   else if (act === 'done') await agSetApptStatus(id, 'completada');
   else if (act === 'cancel') {
-    if (confirm('¿Cancelar esta cita?')) await agSetApptStatus(id, 'cancelada');
+    if (await confirmDialog('¿Cancelar esta cita?')) await agSetApptStatus(id, 'cancelada');
   } else if (act === 'edit') openApptModal({ apptId: id });
 }
 agPendingEl.addEventListener('click', onApptClick);
@@ -7218,9 +7309,9 @@ async function renderLeadApptList(prospectId) {
 document.getElementById('ag-appt-lead-list').addEventListener('click', async (ev) => {
   const btn = ev.target.closest('[data-lead-appt-cancel]');
   const id = btn?.closest('[data-lead-appt]')?.dataset.leadAppt;
-  if (!id || !confirm('¿Cancelar esta cita?')) return;
+  if (!id || !await confirmDialog('¿Cancelar esta cita?')) return;
   const { error } = await supabase.from('appointments').update({ status: 'cancelada' }).eq('id', id);
-  if (error) return alert(`No se pudo cancelar la cita: ${error.message}`);
+  if (error) return notify(`No se pudo cancelar la cita: ${error.message}`);
   renderLeadApptList(state.channelActiveProspectId);
   if (sectionEnabled('agenda')) loadAgenda().catch(() => {});
 });
@@ -7369,9 +7460,9 @@ ciAutoEnrollBtn.addEventListener('click', async () => {
 });
 ciAutoCurrent.addEventListener('click', async (ev) => {
   const id = ev.target.closest('[data-enrollment-remove]')?.closest('[data-enrollment]')?.dataset.enrollment;
-  if (!id || !confirm('¿Sacar a este lead de la cadencia?')) return;
+  if (!id || !await confirmDialog('¿Sacar a este lead de la cadencia?')) return;
   const { error } = await supabase.from('automation_enrollments').delete().eq('id', id);
-  if (error) return alert(`No se pudo sacar de la cadencia: ${error.message}`);
+  if (error) return notify(`No se pudo sacar de la cadencia: ${error.message}`);
   ciAutoStatus.textContent = '';
   await loadAutomationModalData();
 });
@@ -7893,7 +7984,7 @@ viewMetricas.addEventListener('click', async (ev) => {
   const del = ev.target.closest('[data-mx-del]');
   if (del) {
     const { error } = await supabase.from('metric_adjustments').delete().eq('id', del.dataset.mxDel);
-    if (error) alert(`No se pudo quitar el ajuste: ${error.message}`);
+    if (error) notify(`No se pudo quitar el ajuste: ${error.message}`);
     else await loadMetricas();
   }
 });
