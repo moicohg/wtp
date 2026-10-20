@@ -1368,6 +1368,31 @@
     </div>
   </div>
 
+  <!-- Modal: eliminar empresa (solo super-admin, pide nombre y PIN) -->
+  <div id="org-delete-overlay" class="overlay" hidden>
+    <div class="modal modal-sm">
+      <div class="drawer-header">
+        <h2>Eliminar empresa</h2>
+        <button class="btn-icon" id="org-delete-close" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <form id="org-delete-form" class="settings-form" autocomplete="off">
+        <p id="org-delete-warning" class="muted"></p>
+        <label>
+          Escribe el nombre de la empresa para confirmar
+          <input name="name" type="text" required />
+        </label>
+        <label>
+          PIN de eliminación
+          <input name="pin" type="password" inputmode="numeric" required />
+        </label>
+        <div class="settings-actions">
+          <span id="org-delete-status" class="settings-status"></span>
+          <button type="submit" class="btn btn-primary btn-org-danger-solid">Eliminar para siempre</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Modal: nueva empresa (solo super-admin) -->
   <div id="org-overlay" class="overlay" hidden>
     <div class="modal">

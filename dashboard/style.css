@@ -3310,3 +3310,4 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 .btn-org:hover { background: var(--surface-hover); }
 .btn-org-danger { color: #c0392b; }
 .btn-org-ok { color: var(--border-focus); }
+.btn-org-danger-solid { background: #c0392b; border-color: #c0392b; }

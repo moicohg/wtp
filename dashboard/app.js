@@ -5889,22 +5889,13 @@ orgsTbody.addEventListener('click', async (ev) => {
     return;
   }
   if (btn.classList.contains('js-org-delete')) {
-    const typed = prompt(`Vas a eliminar la empresa "${org.name}" con todos sus usuarios, canales, leads y chats. No se puede deshacer.\n\nEscribe el nombre de la empresa para confirmar:`);
-    if (typed === null) return;
-    if (typed.trim() !== org.name) {
-      alert('El nombre no coincide. No se eliminó nada.');
-      return;
-    }
-    const pin = prompt('Ingresa el PIN de eliminación:');
-    if (!pin) return;
-    try {
-      await callAdminUsers('delete_organization', { organization_id: org.id, pin });
-    } catch (err) {
-      alert(`No se pudo eliminar: ${err.message}`);
-      return;
-    }
-    state.expandedOrgIds.delete(org.id);
-    await loadOrganizations();
+    orgDeleteTarget = org;
+    orgDeleteForm.reset();
+    document.getElementById('org-delete-warning').textContent = `Vas a eliminar "${org.name}" con todos sus usuarios, canales, leads y chats. No se puede deshacer.`;
+    orgDeleteStatus.textContent = '';
+    orgDeleteStatus.className = 'settings-status';
+    orgDeleteOverlay.hidden = false;
+    orgDeleteForm.elements.name.focus();
     return;
   }
   if (btn.classList.contains('js-org-toggle')) {
@@ -5918,6 +5909,35 @@ orgsTbody.addEventListener('click', async (ev) => {
     }
     await loadOrganizations();
   }
+});
+
+const orgDeleteOverlay = document.getElementById('org-delete-overlay');
+const orgDeleteForm = document.getElementById('org-delete-form');
+const orgDeleteStatus = document.getElementById('org-delete-status');
+let orgDeleteTarget = null;
+document.getElementById('org-delete-close').addEventListener('click', () => (orgDeleteOverlay.hidden = true));
+orgDeleteOverlay.addEventListener('click', (ev) => {
+  if (ev.target === orgDeleteOverlay) orgDeleteOverlay.hidden = true;
+});
+orgDeleteForm.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const org = orgDeleteTarget;
+  if (!org) return;
+  const fail = (msg) => {
+    orgDeleteStatus.textContent = msg;
+    orgDeleteStatus.className = 'settings-status err';
+  };
+  if (orgDeleteForm.elements.name.value.trim() !== org.name) return fail('El nombre no coincide.');
+  orgDeleteStatus.textContent = 'Eliminando…';
+  orgDeleteStatus.className = 'settings-status';
+  try {
+    await callAdminUsers('delete_organization', { organization_id: org.id, pin: orgDeleteForm.elements.pin.value });
+  } catch (err) {
+    return fail(`Error: ${err.message}`);
+  }
+  orgDeleteOverlay.hidden = true;
+  state.expandedOrgIds.delete(org.id);
+  await loadOrganizations();
 });
 
 document.getElementById('create-org-btn').addEventListener('click', () => {
