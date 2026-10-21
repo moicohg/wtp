@@ -66,6 +66,9 @@
         <button class="sidenav-item" data-section="metricas" data-perm="metrics.view" type="button">
           <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 16v-3"/><path d="M12 16V8"/><path d="M17 16v-6"/></svg></span>Métricas
         </button>
+        <button class="sidenav-item" data-section="integraciones" data-perm="config.manage_channels" type="button">
+          <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg></span>Integraciones
+        </button>
         <button class="sidenav-item" data-section="empresas" id="nav-empresas" type="button" hidden>
           <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></span>Empresas
         </button>
@@ -541,6 +544,34 @@
       </section>
 
       <!-- ═══ Vista: Empresas (solo super-admin) ══════════════════════════ -->
+      <section id="view-integraciones" class="view" hidden>
+        <div class="ag-head">
+          <div>
+            <h2 class="ag-title">Integraciones</h2>
+            <p class="ag-sub">Conecta este panel con otras herramientas que ya usas.</p>
+          </div>
+        </div>
+        <div class="integ-card">
+          <div class="integ-card-head">
+            <h3>GoHighLevel · Menú personalizado</h3>
+            <span class="chip">Sin código</span>
+          </div>
+          <p class="muted">Muestra este panel (chats, leads y métricas) dentro de GoHighLevel / LeadConnector como un ítem del menú lateral.</p>
+          <label class="integ-label" for="integ-ghl-url">URL del panel</label>
+          <div class="integ-copy">
+            <input id="integ-ghl-url" type="text" readonly />
+            <button type="button" class="btn btn-primary" id="integ-ghl-copy">Copiar</button>
+          </div>
+          <ol class="integ-steps">
+            <li>En GoHighLevel entra a <strong>Settings → Custom Menu Links → Create New</strong>.</li>
+            <li><strong>Title:</strong> por ejemplo «Chats WhatsApp». <strong>URL:</strong> pega la de arriba.</li>
+            <li><strong>Open in:</strong> iFrame. <strong>Show on:</strong> Sub-account.</li>
+            <li>Guarda y recarga GoHighLevel: el ítem aparece en el menú. Cada usuario inicia sesión una vez dentro del iframe.</li>
+          </ol>
+          <p class="muted integ-note">Este panel solo permite abrirse dentro de GoHighLevel (app.firefunnels.net y los dominios de LeadConnector).</p>
+        </div>
+      </section>
+
       <section id="view-empresas" class="view" hidden>
         <div class="page-heading-row">
           <div>

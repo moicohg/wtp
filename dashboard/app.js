@@ -514,6 +514,9 @@ const automationSaveDraftBtn = document.getElementById('automation-save-draft-bt
 const automationActivateBtn = document.getElementById('automation-activate-btn');
 
 const viewDisponibilidad = document.getElementById('view-disponibilidad');
+const viewIntegraciones = document.getElementById('view-integraciones');
+const integGhlUrl = document.getElementById('integ-ghl-url');
+const integGhlCopy = document.getElementById('integ-ghl-copy');
 const viewConfiguracion = document.getElementById('view-configuracion');
 const configVendorsTbody = document.getElementById('config-vendors-tbody');
 const configTabsEl = document.getElementById('config-tabs');
@@ -890,6 +893,7 @@ const SECTION_PERMS = {
   'catalogo-ia': ['config.products'],
   automatizacion: ['messaging.manage_automations'],
   metricas: ['metrics.view'],
+  integraciones: ['config.manage_channels'],
   configuracion: ['users.manage_users', 'users.manage_roles'],
 };
 
@@ -927,6 +931,7 @@ async function setSection(section) {
   const isAutomatizacion = section === 'automatizacion';
   const isDisponibilidad = section === 'disponibilidad';
   const isMetricas = section === 'metricas';
+  const isIntegraciones = section === 'integraciones';
   const isConfiguracion = section === 'configuracion';
   const isEmpresas = section === 'empresas';
   const isPlaceholder =
@@ -941,6 +946,7 @@ async function setSection(section) {
     !isAutomatizacion &&
     !isDisponibilidad &&
     !isMetricas &&
+    !isIntegraciones &&
     !isConfiguracion &&
     !isEmpresas;
 
@@ -955,6 +961,7 @@ async function setSection(section) {
   viewAutomatizacion.hidden = !isAutomatizacion;
   viewDisponibilidad.hidden = !isDisponibilidad;
   viewMetricas.hidden = !isMetricas;
+  viewIntegraciones.hidden = !isIntegraciones;
   viewConfiguracion.hidden = !isConfiguracion;
   viewEmpresas.hidden = !isEmpresas;
   viewPlaceholder.hidden = !isPlaceholder;
@@ -989,6 +996,9 @@ async function setSection(section) {
   } else if (isMetricas) {
     topbarTitle.textContent = 'Métricas';
     await loadMetricas();
+  } else if (isIntegraciones) {
+    topbarTitle.textContent = 'Integraciones';
+    integGhlUrl.value = location.origin + '/';
   } else if (isConfiguracion) {
     topbarTitle.textContent = 'Configuración';
     setConfigTab(can('users.manage_users') ? state.configTab : 'roles');
@@ -7562,6 +7572,16 @@ const MX_DEFAULT_TARGETS = {
 const MX_STATUS_LABEL = { ok: 'En meta', warn: 'Cerca', bad: 'Bajo', na: 'Pocos datos' };
 
 const mxState = { period: 'day', anchor: null, agent: '', origen: '', rows: [], targets: { ...MX_DEFAULT_TARGETS }, spend: {}, adjustments: [], token: 0 };
+
+integGhlCopy.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(integGhlUrl.value);
+    toast('URL copiada', 'ok');
+  } catch {
+    integGhlUrl.select();
+    toast('Copia la URL con Ctrl/Cmd + C', 'info');
+  }
+});
 
 const viewMetricas = document.getElementById('view-metricas');
 const mxAgentSel = document.getElementById('mx-agent');
