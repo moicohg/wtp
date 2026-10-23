@@ -6669,14 +6669,38 @@ loginForm.addEventListener('submit', async (ev) => {
 
   setLoginStatus('Ingresando…');
   state.loginModeAttempt = loginMode;
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error || !data.session) {
+  const submitBtn = document.getElementById('login-submit-btn');
+  const submitLabel = submitBtn.querySelector('span');
+  const labelText = submitLabel.textContent;
+  submitBtn.disabled = true;
+  submitLabel.textContent = 'Ingresando…';
+  let data;
+  let error;
+  try {
+    // Si Auth no responde (red caída, pestaña con el bloqueo de sesión), no
+    // dejar la pantalla muda: a los 15 s se avisa.
+    ({ data, error } = await Promise.race([
+      supabase.auth.signInWithPassword({ email, password }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
+    ]));
+  } catch (err) {
+    error = err;
+  } finally {
+    submitBtn.disabled = false;
+    submitLabel.textContent = labelText;
+  }
+  if (error || !data?.session) {
     state.loginModeAttempt = null;
-    const msg = /invalid login credentials/i.test(error?.message ?? '')
+    const raw = error?.message ?? '';
+    const msg = /invalid login credentials/i.test(raw)
       ? loginMode === 'empresa'
         ? 'Correo o contraseña incorrectos.'
         : 'Número o contraseña incorrectos.'
-      : `No se pudo iniciar sesión: ${error?.message ?? 'error desconocido'}`;
+      : raw === 'timeout'
+        ? 'El servidor no responde. Revisa tu conexión, cierra otras pestañas de este panel y vuelve a intentar.'
+        : /failed to fetch|network/i.test(raw)
+          ? 'Sin conexión con el servidor. Revisa tu internet e intenta de nuevo.'
+          : `No se pudo iniciar sesión: ${raw || 'error desconocido'}`;
     return setLoginStatus(msg, true);
   }
   await bootstrapSession(data.session);
