@@ -934,6 +934,19 @@ body {
   }
 }
 
+@media (max-width: 520px) {
+  .login-screen-modern { padding: 12px; align-items: flex-start; }
+  .login-container { margin: auto 0; border-radius: 16px; }
+  .login-card-modern { padding: 26px 18px; }
+  .login-title { font-size: 24px; }
+  /* País arriba y número debajo, cada uno a todo el ancho */
+  .modern-phone-field { flex-direction: column; }
+  .select-wrapper { width: 100%; }
+  .login-form-modern .modern-select, .login-form-modern select { height: 46px; }
+  .phone-input-wrap { width: 100%; }
+  .login-form-modern input { font-size: 16px; } /* evita el zoom automático de iOS */
+}
+
 /* Ocultar por permiso: estos selectores tienen display propio */
 .sidenav-item[hidden], .sidenav-subitem[hidden], .sidenav-section[hidden],
 .chip[hidden], .btn[hidden], .sidebar-footer-item[hidden], .status-pill-wrap[hidden],
