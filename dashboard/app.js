@@ -245,6 +245,7 @@ const state = {
   vendors: [],
   agents: [],
   me: null, // sesión: { user, profile, organization, agent, isAdmin, isSuperAdmin, permissions }
+  handledVendorIds: new Set(), // canales donde el vendedor tiene leads (reparto)
   loginModeAttempt: null, // 'empresa' | 'vendedor' — pestaña con la que se intentó entrar
   profiles: [], // usuarios (profiles) visibles: los de mi empresa, o todos si soy super-admin
   organizations: [], // solo super-admin (sección Empresas)
@@ -813,13 +814,23 @@ const colorFor = (id) => {
 // ── Navegación (sidebar) ──────────────────────────────────────────────────────
 
 // Canales que el usuario puede abrir: admin → todos los de su empresa;
-// vendedor → solo los que tiene asignados (los leads prestados le llegan por
-// Bandeja Global).
+// vendedor → los que tiene asignados y aquellos donde le tocaron leads por el
+// reparto (state.handledVendorIds). Dentro del canal solo ve sus propios chats
+// porque RLS filtra los prospectos.
 function visibleVendors() {
   if (!state.me) return [];
   if (state.me.isAdmin) return state.vendors;
   const agentId = state.me.agent?.id;
-  return agentId ? state.vendors.filter((v) => v.assigned_agent_id === agentId) : [];
+  if (!agentId) return [];
+  return state.vendors.filter((v) => v.assigned_agent_id === agentId || state.handledVendorIds.has(v.id));
+}
+
+// Canales donde el vendedor tiene al menos un lead (RLS ya limita las filas a los suyos).
+async function loadHandledVendorIds() {
+  state.handledVendorIds = new Set();
+  if (!state.me || state.me.isAdmin) return;
+  const { data } = await supabase.from('prospects').select('vendor_id').limit(1000);
+  state.handledVendorIds = new Set((data ?? []).map((r) => r.vendor_id));
 }
 
 function renderSidenavVendors() {
@@ -1055,6 +1066,7 @@ async function loadVendors() {
     return;
   }
   state.vendors = data ?? [];
+  await loadHandledVendorIds();
 
   const mine = visibleVendors();
   vendorSelect.innerHTML = mine
