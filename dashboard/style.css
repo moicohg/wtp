@@ -3307,6 +3307,13 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
   .channel-layout { grid-template-columns: 1fr; height: calc(100dvh - 110px); min-height: 0; }
   .channel-layout:has(#channel-thread:not([hidden])) .channel-list-pane { display: none; }
   .channel-layout:not(:has(#channel-thread:not([hidden]))) .channel-thread-pane { display: none; }
+  /* Conversación abierta: ocupa toda la pantalla; cabecera arriba, mensajes con scroll
+     y el cuadro de escribir pegado al fondo (sobre el teclado y la barra del sistema). */
+  .channel-layout:has(#channel-thread:not([hidden])) .channel-thread-pane {
+    position: fixed; inset: 0; z-index: 60; height: 100vh; height: 100dvh;
+    border: 0; border-radius: 0; box-shadow: none;
+  }
+  .channel-composer { padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
   .ct-back { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0;
     border: 0; background: transparent; font-size: 22px; color: var(--text); cursor: pointer; }
   .channel-thread-header { flex-wrap: wrap; padding: 10px 12px; gap: 8px; }
