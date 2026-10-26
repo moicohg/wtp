@@ -1586,6 +1586,17 @@ tbody tr:hover {
 }
 .composer-icon-btn:hover { background: var(--bg); }
 .composer-icon-btn svg { display: block; }
+
+/* Enviar redondo como WhatsApp: con el campo vacío se ve el micrófono; al escribir, la flecha. */
+.channel-composer input[type="text"] { min-width: 0; }
+.composer-send-btn {
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 42px; height: 42px; padding: 0; border: none; border-radius: 50%;
+  background: var(--border-focus); color: #fff; cursor: pointer;
+}
+.composer-send-btn:hover { filter: brightness(0.95); }
+.channel-composer:has(#channel-composer-input:placeholder-shown) .composer-send-btn,
+.channel-composer:has(#channel-composer-input:not(:placeholder-shown)) #composer-mic-btn { display: none; }
 .composer-icon-btn.is-recording { background: #fdecea; color: #d1352a; animation: composer-pulse 1.2s infinite; }
 @keyframes composer-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 
