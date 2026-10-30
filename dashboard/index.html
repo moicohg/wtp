@@ -172,6 +172,20 @@
             <select id="cn-agent-filter" aria-label="Filtrar por asesor"></select>
           </div>
         </div>
+        <div class="ag-card cn-health" id="cn-health-card">
+          <div class="cn-health-bar">
+            <span><b>¿El bot está respondiendo?</b> <small>Revisa los chats recientes y dice si algún cliente quedó sin respuesta.</small></span>
+            <span class="cn-health-actions">
+              <select id="cn-health-hours" aria-label="Período a revisar">
+                <option value="6">Últimas 6 horas</option>
+                <option value="12">Últimas 12 horas</option>
+                <option value="24">Últimas 24 horas</option>
+              </select>
+              <button type="button" class="btn" id="cn-health-btn">Revisar ahora</button>
+            </span>
+          </div>
+          <div id="cn-health-result" hidden></div>
+        </div>
         <div class="cn-grid">
           <div class="cn-main">
             <div class="ag-card" id="cn-table"></div>

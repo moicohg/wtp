@@ -3492,6 +3492,55 @@ function renderVendorCards() {
   renderCanalDetail();
 }
 
+// ── Revisión del bot: ¿está contestando de verdad? ───────────────────────────
+// bot_activity (RPC, respeta RLS) resume por canal los últimos N horas: clientes que escribieron,
+// respuestas de la IA y de personas, y clientes cuyo último mensaje quedó sin contestar.
+
+const cnHealthBtn = document.getElementById('cn-health-btn');
+const cnHealthHours = document.getElementById('cn-health-hours');
+const cnHealthResult = document.getElementById('cn-health-result');
+
+function botVerdict(r) {
+  const waitingOn = r.unanswered.filter((u) => u.ia_on);
+  if (r.ai_error_kind) return { cls: 'is-bad', icon: '🚨', text: `La IA está fallando: ${AI_ERROR_TEXT[r.ai_error_kind] || AI_ERROR_TEXT.other}.` };
+  if (waitingOn.length) return { cls: 'is-bad', icon: '⚠️', text: `${waitingOn.length} ${waitingOn.length === 1 ? 'cliente sin respuesta' : 'clientes sin respuesta'} aunque la IA está encendida. Revisa el canal.` };
+  if (!r.clients_written) return { cls: 'is-idle', icon: '💤', text: 'Sin mensajes de clientes en este período.' };
+  if (!r.ia_on) return { cls: 'is-idle', icon: '⏸', text: `IA apagada o sin clave: ${r.clients_written} ${r.clients_written === 1 ? 'cliente escribió' : 'clientes escribieron'}, atiende una persona.` };
+  if (!r.ai_replies && !r.human_replies) return { cls: 'is-bad', icon: '⚠️', text: 'Escribieron clientes y nadie les respondió.' };
+  return { cls: 'is-ok', icon: '✅', text: `Respondiendo bien: ${r.ai_replies} respuestas de la IA${r.human_replies ? ` y ${r.human_replies} de personas` : ''}.` };
+}
+
+async function runBotHealth() {
+  const hours = Number(cnHealthHours.value);
+  cnHealthBtn.disabled = true;
+  cnHealthBtn.textContent = 'Revisando…';
+  try {
+    const { data, error } = await supabase.rpc('bot_activity', { p_hours: hours });
+    if (error) throw new Error(error.message);
+    const visible = new Set((state.me?.isAdmin ? state.vendors : visibleVendors()).map((v) => v.id));
+    const rows = (data || []).filter((r) => visible.has(r.vendor_id));
+    cnHealthResult.hidden = false;
+    cnHealthResult.innerHTML = rows.length
+      ? rows.map((r) => {
+          const v = botVerdict(r);
+          const waiting = r.unanswered.slice(0, 8).map((u) => `<li>${escapeHtml(u.name || agFormatPhone(u.phone))} · esperando ${agTimeAgo(u.since)}${u.ia_on ? '' : ' <small>(IA apagada en este chat)</small>'}</li>`).join('');
+          return `<div class="cn-health-row ${v.cls}">
+            <div class="cn-health-main"><b>${escapeHtml(r.name)}</b><span>${v.icon} ${v.text}</span></div>
+            <div class="cn-health-stats"><span>${r.clients_written} escribieron</span><span>${r.ai_replies} IA</span><span>${r.human_replies} personas</span><span>${r.last_ai_reply_at ? `última respuesta IA ${agTimeAgo(r.last_ai_reply_at)}` : 'la IA nunca ha respondido'}</span></div>
+            ${waiting ? `<ul class="cn-health-wait">${waiting}</ul>` : ''}
+          </div>`;
+        }).join('')
+      : '<p class="muted">No hay canales para revisar.</p>';
+  } catch (err) {
+    cnHealthResult.hidden = false;
+    cnHealthResult.innerHTML = `<p class="settings-status err">No se pudo revisar: ${escapeHtml(err.message)}</p>`;
+  } finally {
+    cnHealthBtn.disabled = false;
+    cnHealthBtn.textContent = 'Revisar ahora';
+  }
+}
+cnHealthBtn.addEventListener('click', runBotHealth);
+
 function renderCanalDetail() {
   const v = state.vendors.find((x) => x.id === cnState.selectedId);
   if (!v) {
