@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { detectAppointment } from '../_shared/appointments.ts';
 import { settleBurst, withoutPending } from '../_shared/burst.ts';
 import { agendaEnabled, aiAllowed, getOrgUsage } from '../_shared/limits.ts';
+import { AIError, classifyAIError, recordAIError, recordAIOk } from '../_shared/ai-health.ts';
 import { adReferralFromMeta, markAdOrigin } from '../_shared/origin.ts';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -207,6 +208,7 @@ async function callAI(
       }),
     });
     const data = await response.json();
+    if (!response.ok) throw classifyAIError(response.status, data?.error ?? data);
     return parseAIResponse(data.content?.[0]?.text ?? '');
   }
 
@@ -228,6 +230,7 @@ async function callAI(
       }),
     });
     const data = await response.json();
+    if (!response.ok) throw classifyAIError(response.status, data?.error ?? data);
     return parseAIResponse(data.choices?.[0]?.message?.content ?? '');
   }
 
@@ -250,6 +253,7 @@ async function callAI(
       }),
     });
     const data = await response.json();
+    if (!response.ok) throw classifyAIError(response.status, data?.error ?? data);
     return parseAIResponse(data.candidates?.[0]?.content?.parts?.[0]?.text ?? '');
   }
 
@@ -501,7 +505,17 @@ Deno.serve(async (req: Request) => {
           const priorHistory = saved ? withoutPending(history) : history;
 
           // 5b. Llamar a la IA
-          const aiReply = await callAI(vendor, priorHistory, fullText, prospect);
+          let aiReply: AIReply;
+          try {
+            aiReply = await callAI(vendor, priorHistory, fullText, prospect);
+            await recordAIOk(supabase, vendor);
+          } catch (e) {
+            // Sin IA no se responde: el mensaje del cliente ya quedó guardado para que lo atienda una persona.
+            const aiErr = e instanceof AIError ? e : new AIError('other', String(e instanceof Error ? e.message : e).slice(0, 300));
+            console.error('[ia] fallo de la IA, canal', vendor.name, aiErr.kind, aiErr.detail);
+            await recordAIError(supabase, vendor, aiErr);
+            continue;
+          }
 
           // 6. Guardar respuesta del asistente
           await supabase.from('messages').insert([

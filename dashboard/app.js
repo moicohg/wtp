@@ -1056,7 +1056,7 @@ document.querySelector('.sidebar-footer').addEventListener('click', () => docume
 // Sin ai_api_key ni meta_access_token: el cliente no necesita los secretos
 // (y el lockdown revoca su lectura). ai_key_set dice si hay clave.
 const VENDOR_COLUMNS =
-  'id, name, phone_number, channel_type, evolution_instance_id, meta_phone_number_id, meta_waba_id, meta_verified, evolution_connected, evolution_disconnected_at, ' +
+  'id, name, phone_number, channel_type, evolution_instance_id, meta_phone_number_id, meta_waba_id, meta_verified, evolution_connected, evolution_disconnected_at, ai_last_ok_at, ai_error_kind, ai_error_detail, ai_error_at, ' +
   'ai_provider, ai_model, ai_key_set, ia_enabled, system_prompt, assigned_agent_id, keywords, organization_id, created_at, updated_at';
 
 async function loadVendors() {
@@ -3211,23 +3211,45 @@ function renderPlanBanner() {
 const channelAlertEl = document.getElementById('channel-alert');
 const CHANNEL_HEALTH_MS = 60000;
 
+const AI_ERROR_TEXT = {
+  credits: 'se acabó el saldo o los créditos de la API',
+  key: 'la clave de la API es inválida o fue revocada',
+  rate: 'se alcanzó el límite de uso de la API',
+  model: 'el modelo configurado no existe o no está disponible',
+  other: 'la API de la IA no está respondiendo',
+};
+
 function renderChannelAlert() {
   const mine = state.me?.isAdmin ? state.vendors : visibleVendors();
   const down = mine.filter((v) => v.channel_type === 'evolution' && !v.evolution_connected && v.evolution_disconnected_at);
-  channelAlertEl.hidden = !down.length;
-  if (!down.length) return;
+  const aiDown = mine.filter((v) => v.ai_error_kind);
+  channelAlertEl.hidden = !down.length && !aiDown.length;
+  if (channelAlertEl.hidden) return;
   const canReconnect = can('config.manage_channels');
+  const rows = [];
   if (down.length === 1) {
     const v = down[0];
-    channelAlertEl.innerHTML = `<span>⚠️ El canal <b>${escapeHtml(v.name)}</b> perdió la conexión de WhatsApp ${agTimeAgo(v.evolution_disconnected_at)}. El bot no está respondiendo.</span>
-      ${canReconnect ? `<button type="button" data-alert-reconnect="${v.id}">Reconectar con QR</button>` : ''}`;
-  } else {
-    channelAlertEl.innerHTML = `<span>⚠️ ${down.length} canales perdieron la conexión de WhatsApp: ${down.map((v) => `<b>${escapeHtml(v.name)}</b>`).join(', ')}. El bot no está respondiendo en ellos.</span>
-      ${canReconnect ? '<button type="button" data-alert-reconnect="">Ver canales</button>' : ''}`;
+    rows.push(`<div class="channel-alert-row"><span>⚠️ El canal <b>${escapeHtml(v.name)}</b> perdió la conexión de WhatsApp ${agTimeAgo(v.evolution_disconnected_at)}. El bot no está respondiendo.</span>
+      ${canReconnect ? `<button type="button" data-alert-reconnect="${v.id}">Reconectar con QR</button>` : ''}</div>`);
+  } else if (down.length) {
+    rows.push(`<div class="channel-alert-row"><span>⚠️ ${down.length} canales perdieron la conexión de WhatsApp: ${down.map((v) => `<b>${escapeHtml(v.name)}</b>`).join(', ')}. El bot no está respondiendo en ellos.</span>
+      ${canReconnect ? '<button type="button" data-alert-reconnect="">Ver canales</button>' : ''}</div>`);
   }
+  for (const v of aiDown) {
+    rows.push(`<div class="channel-alert-row"><span>🚨 El bot del canal <b>${escapeHtml(v.name)}</b> no está respondiendo desde ${agTimeAgo(v.ai_error_at)}: ${AI_ERROR_TEXT[v.ai_error_kind] || AI_ERROR_TEXT.other}.</span>
+      ${canReconnect ? `<button type="button" data-alert-ai="${v.id}">Revisar canal</button>` : ''}</div>`);
+  }
+  channelAlertEl.innerHTML = rows.join('');
 }
 
 channelAlertEl.addEventListener('click', async (ev) => {
+  const aiBtn = ev.target.closest('[data-alert-ai]');
+  if (aiBtn) {
+    await setSection('canales-lista');
+    cnState.selectedId = aiBtn.dataset.alertAi;
+    renderVendorCards();
+    return;
+  }
   const btn = ev.target.closest('[data-alert-reconnect]');
   if (!btn) return;
   const id = btn.dataset.alertReconnect;
@@ -3247,12 +3269,12 @@ channelAlertEl.addEventListener('click', async (ev) => {
 
 async function pollChannelHealth() {
   if (!state.me || document.hidden) return;
-  const { data, error } = await supabase.from('vendors').select('id, evolution_connected, evolution_disconnected_at').eq('channel_type', 'evolution');
+  const { data, error } = await supabase.from('vendors').select('id, evolution_connected, evolution_disconnected_at, ai_last_ok_at, ai_error_kind, ai_error_detail, ai_error_at');
   if (error || !data) return;
   let changed = false;
   for (const row of data) {
     const v = state.vendors.find((x) => x.id === row.id);
-    if (v && (v.evolution_connected !== row.evolution_connected || v.evolution_disconnected_at !== row.evolution_disconnected_at)) {
+    if (v && (v.evolution_connected !== row.evolution_connected || v.evolution_disconnected_at !== row.evolution_disconnected_at || v.ai_error_kind !== row.ai_error_kind || v.ai_last_ok_at !== row.ai_last_ok_at)) {
       Object.assign(v, row);
       changed = true;
     }
@@ -3446,7 +3468,9 @@ function renderVendorCards() {
           <span class="cn-channel">${cnAvatar(v.name, v.id)}<span><b>${escapeHtml(v.name)}</b><small>${escapeHtml(v.phone_number ? agFormatPhone(v.phone_number) : '—')}</small></span></span>
           <span><span class="cn-pill ${connected ? 'is-on' : 'is-off'}">${connected ? 'Conectado' : 'Sin conectar'}</span></span>
           <span class="cn-ia-cell">${v.ai_key_set
-            ? `<label class="switch" title="${v.ia_enabled !== false ? 'Apagar la IA en todos los chats de este canal' : 'Encender la IA en este canal'}"><input type="checkbox" data-cn-ia="${v.id}" ${v.ia_enabled !== false ? 'checked' : ''} ${can('config.manage_channels') || can('config.ai_settings') ? '' : 'disabled'} /><span class="switch-track"></span></label>`
+            ? `<label class="switch" title="${v.ia_enabled !== false ? 'Apagar la IA en todos los chats de este canal' : 'Encender la IA en este canal'}"><input type="checkbox" data-cn-ia="${v.id}" ${v.ia_enabled !== false ? 'checked' : ''} ${can('config.manage_channels') || can('config.ai_settings') ? '' : 'disabled'} /><span class="switch-track"></span></label>${v.ai_error_kind
+              ? `<span class="cn-pill is-off" title="${escapeHtml(v.ai_error_detail || '')}">⚠️ ${v.ai_error_kind === 'credits' ? 'Sin saldo' : v.ai_error_kind === 'key' ? 'Clave inválida' : v.ai_error_kind === 'rate' ? 'Límite de uso' : v.ai_error_kind === 'model' ? 'Modelo inválido' : 'IA caída'}</span>`
+              : v.ai_last_ok_at ? `<small class="muted" title="Última respuesta correcta de la IA">respondió ${agTimeAgo(v.ai_last_ok_at)}</small>` : ''}`
             : '<span class="cn-pill is-off">Sin configurar</span>'}</span>
           <span class="cn-advisor">${agent ? `${cnAvatar(agent.name, agent.id, true)}${escapeHtml(agent.name)}` : '<span class="muted">Sin asignar</span>'}</span>
           <span class="cn-chevron">›</span>

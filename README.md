@@ -356,6 +356,7 @@ La identidad del que llama sale siempre del `access_token` del usuario (`getCall
 6. Si no hay API key, el canal tiene la IA apagada, el chat tiene `ia_enabled=false`, se agotó el cupo mensual o el plan venció, termina ahí (el mensaje queda guardado).
 7. Espera `BURST_WAIT_MS`: si llegó otro mensaje del cliente, termina y deja que responda el último, con todo junto.
 8. Llama al proveedor de IA con el `system_prompt` del canal (o el prompt por defecto "Alia", agente inmobiliaria) y el historial.
+8b. Si el proveedor responde con error (sin saldo, clave inválida, límite de uso, modelo inexistente) o no responde, `_shared/ai-health.ts` lo clasifica, marca el canal (`vendors.ai_error_*`), avisa una vez por WhatsApp al asesor y a `availability_settings.alert_phones` (por otro canal QR conectado) y no se le contesta nada al cliente: el mensaje queda guardado para una persona. La siguiente respuesta correcta limpia el error. El panel muestra banner y pastilla en Canales.
 9. La IA devuelve JSON con la respuesta, datos extraídos, `score`, `label` y `conversation_step` (paso_0 → paso_1 → paso_2 → calificado / tibio / frio).
 10. Actualiza el prospecto, guarda la respuesta con `by_ai = true` y la envía por WhatsApp.
 11. Si el mensaje suena a cita, `detectAppointment` propone una cita por confirmar.

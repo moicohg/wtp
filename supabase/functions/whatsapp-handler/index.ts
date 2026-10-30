@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { detectAppointment } from '../_shared/appointments.ts';
 import { agendaEnabled, aiAllowed, getOrgUsage, storageAllowed } from '../_shared/limits.ts';
 import { settleBurst, withoutPending } from '../_shared/burst.ts';
+import { AIError, classifyAIError, recordAIError, recordAIOk } from '../_shared/ai-health.ts';
 import { understandMedia } from '../_shared/media-ai.ts';
 import { adReferralFromEvolution, markAdOrigin } from '../_shared/origin.ts';
 
@@ -240,7 +241,10 @@ async function callAI(vendor: Vendor, history: Message[], messageText: string, p
       }),
     });
     const data = await response.json();
-    if (!response.ok) console.error('[ia:anthropic] HTTP', response.status, JSON.stringify(data?.error ?? data).slice(0, 300));
+    if (!response.ok) {
+      console.error('[ia:anthropic] HTTP', response.status, JSON.stringify(data?.error ?? data).slice(0, 300));
+      throw classifyAIError(response.status, data?.error ?? data);
+    }
     return parseAIResponse(data.content?.[0]?.text ?? '');
   }
 
@@ -262,7 +266,10 @@ async function callAI(vendor: Vendor, history: Message[], messageText: string, p
       }),
     });
     const data = await response.json();
-    if (!response.ok) console.error('[ia:openai] HTTP', response.status, JSON.stringify(data?.error ?? data).slice(0, 300));
+    if (!response.ok) {
+      console.error('[ia:openai] HTTP', response.status, JSON.stringify(data?.error ?? data).slice(0, 300));
+      throw classifyAIError(response.status, data?.error ?? data);
+    }
     return parseAIResponse(data.choices?.[0]?.message?.content ?? '');
   }
 
@@ -286,7 +293,10 @@ async function callAI(vendor: Vendor, history: Message[], messageText: string, p
       }),
     });
     const data = await response.json();
-    if (!response.ok) console.error('[ia:google] HTTP', response.status, JSON.stringify(data?.error ?? data).slice(0, 300));
+    if (!response.ok) {
+      console.error('[ia:google] HTTP', response.status, JSON.stringify(data?.error ?? data).slice(0, 300));
+      throw classifyAIError(response.status, data?.error ?? data);
+    }
     return parseAIResponse(data.candidates?.[0]?.content?.parts?.[0]?.text ?? '');
   }
 
@@ -563,7 +573,17 @@ Deno.serve(async (req: Request) => {
     const priorHistory = saved ? withoutPending(history) : history;
 
     // 5b. Llamar a la IA con la api_key del vendor
-    const aiReply = await callAI(vendor, priorHistory, fullText, prospect);
+    let aiReply: ClaudeReply;
+    try {
+      aiReply = await callAI(vendor, priorHistory, fullText, prospect);
+      await recordAIOk(supabase, vendor);
+    } catch (e) {
+      // Sin IA no se responde: el mensaje del cliente ya quedó guardado para que lo atienda una persona.
+      const aiErr = e instanceof AIError ? e : new AIError('other', String(e instanceof Error ? e.message : e).slice(0, 300));
+      console.error('[ia] fallo de la IA, canal', vendor.name, aiErr.kind, aiErr.detail);
+      await recordAIError(supabase, vendor, aiErr);
+      return new Response('ok', { status: 200 });
+    }
 
     // 6. Guardar respuesta del asistente
     await supabase.from('messages').insert([
