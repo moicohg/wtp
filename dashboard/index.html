@@ -1082,10 +1082,16 @@
           Modelo
           <input id="f-model" name="ai_model" type="text" placeholder="claude-sonnet-4-6" />
         </label>
-        <label>
-          API key <span class="hint">(se deja en blanco = no cambiar)</span>
-          <input id="f-key" name="ai_api_key" type="password" placeholder="sk-…" autocomplete="off" />
-        </label>
+        <div class="key-field">
+          <div id="f-key-set" class="key-set" hidden>
+            <span class="key-set-text">API key <b>✓ conectada</b></span>
+            <button type="button" class="btn" id="f-key-change">Cambiar</button>
+          </div>
+          <label id="f-key-label">
+            API key <span class="hint" id="f-key-hint">(se deja en blanco = no cambiar)</span>
+            <input id="f-key" name="ai_api_key" type="password" placeholder="sk-…" autocomplete="off" />
+          </label>
+        </div>
         <div class="ai-test">
           <button type="button" class="btn" id="f-ai-test-btn">Probar conexión de IA</button>
           <span id="f-ai-test-status" class="settings-status"></span>

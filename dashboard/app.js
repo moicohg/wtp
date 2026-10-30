@@ -5167,6 +5167,22 @@ ctIaToggle.addEventListener('click', async () => {
 
 // ── Configuración del canal (IA + palabras clave) ────────────────────────────
 
+const keySetEl = document.getElementById('f-key-set');
+const keyLabelEl = document.getElementById('f-key-label');
+const keyHintEl = document.getElementById('f-key-hint');
+
+function setKeyFieldMode(keySet) {
+  keySetEl.hidden = !keySet;
+  keyLabelEl.hidden = keySet;
+  keyHintEl.textContent = keySet ? '(pega la nueva; en blanco = no cambiar)' : '(pégala para activar el bot)';
+}
+
+document.getElementById('f-key-change').addEventListener('click', () => {
+  keySetEl.hidden = true;
+  keyLabelEl.hidden = false;
+  settingsForm.elements['ai_api_key'].focus();
+});
+
 function openSettings(vendorId) {
   const v = state.vendors.find((x) => x.id === vendorId);
   if (!v) return;
@@ -5175,6 +5191,8 @@ function openSettings(vendorId) {
   settingsForm.elements['ai_provider'].value = v.ai_provider;
   settingsForm.elements['ai_model'].value = v.ai_model ?? '';
   settingsForm.elements['ai_api_key'].value = '';
+  // Con clave guardada se muestra "conectada" (la clave nunca llega al panel); sin clave, el campo queda libre.
+  setKeyFieldMode(Boolean(v.ai_key_set));
   aiTestStatus.textContent = '';
   settingsForm.elements['keywords'].value = (v.keywords ?? []).join(', ');
   settingsForm.elements['system_prompt'].value = v.system_prompt ?? '';
