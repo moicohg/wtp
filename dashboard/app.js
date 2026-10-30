@@ -3502,9 +3502,16 @@ const cnHealthResult = document.getElementById('cn-health-result');
 
 function botVerdict(r) {
   const waitingOn = r.unanswered.filter((u) => u.ia_on);
+  const live = r.live;
   if (r.ai_error_kind) return { cls: 'is-bad', icon: '🚨', text: `La IA está fallando: ${AI_ERROR_TEXT[r.ai_error_kind] || AI_ERROR_TEXT.other}.` };
+  if (live?.evolution_state && live.evolution_state !== 'open') return { cls: 'is-bad', icon: '🔌', text: `El WhatsApp de este canal no está vinculado (estado: ${live.evolution_state}). Reconéctalo con QR.`, reconnect: true };
+  if (live?.webhook_ok === false) return { cls: 'is-bad', icon: '🔌', text: 'El WhatsApp figura conectado, pero el canal no está enviando los mensajes al CRM. Por eso no llegan ni se responden.', fix: true };
   if (waitingOn.length) return { cls: 'is-bad', icon: '⚠️', text: `${waitingOn.length} ${waitingOn.length === 1 ? 'cliente sin respuesta' : 'clientes sin respuesta'} aunque la IA está encendida. Revisa el canal.` };
-  if (!r.clients_written) return { cls: 'is-idle', icon: '💤', text: 'Sin mensajes de clientes en este período.' };
+  if (!r.clients_written) {
+    const last = r.last_user_at ? ` El último cliente escribió ${agTimeAgo(r.last_user_at)}.` : '';
+    const ok = live?.evolution_state === 'open' && live.webhook_ok ? ' La conexión está bien.' : '';
+    return { cls: 'is-idle', icon: '💤', text: `No llegó ningún mensaje de clientes en este período.${last}${ok} Si esperabas mensajes, revisa que el WhatsApp siga vinculado en el teléfono.` };
+  }
   if (!r.ia_on) return { cls: 'is-idle', icon: '⏸', text: `IA apagada o sin clave: ${r.clients_written} ${r.clients_written === 1 ? 'cliente escribió' : 'clientes escribieron'}, atiende una persona.` };
   if (!r.ai_replies && !r.human_replies) return { cls: 'is-bad', icon: '⚠️', text: 'Escribieron clientes y nadie les respondió.' };
   return { cls: 'is-ok', icon: '✅', text: `Respondiendo bien: ${r.ai_replies} respuestas de la IA${r.human_replies ? ` y ${r.human_replies} de personas` : ''}.` };
@@ -3519,13 +3526,26 @@ async function runBotHealth() {
     if (error) throw new Error(error.message);
     const visible = new Set((state.me?.isAdmin ? state.vendors : visibleVendors()).map((v) => v.id));
     const rows = (data || []).filter((r) => visible.has(r.vendor_id));
+    // Estado real en Evolution (la marca "conectado" puede estar desfasada). Solo quien administra canales puede consultarlo.
+    if (can('config.manage_channels')) {
+      await Promise.all(rows.filter((r) => r.channel_type === 'evolution').map(async (r) => {
+        try {
+          r.live = await callEvolutionConnect({ action: 'check', vendor_id: r.vendor_id });
+        } catch (e) {
+          r.live = null;
+        }
+      }));
+    }
     cnHealthResult.hidden = false;
     cnHealthResult.innerHTML = rows.length
       ? rows.map((r) => {
           const v = botVerdict(r);
           const waiting = r.unanswered.slice(0, 8).map((u) => `<li>${escapeHtml(u.name || agFormatPhone(u.phone))} · esperando ${agTimeAgo(u.since)}${u.ia_on ? '' : ' <small>(IA apagada en este chat)</small>'}</li>`).join('');
+          const action = v.fix ? `<button type="button" class="btn" data-health-fix="${r.vendor_id}">Reparar conexión</button>`
+            : v.reconnect ? `<button type="button" class="btn" data-health-reconnect="${r.vendor_id}">Reconectar con QR</button>` : '';
           return `<div class="cn-health-row ${v.cls}">
             <div class="cn-health-main"><b>${escapeHtml(r.name)}</b><span>${v.icon} ${v.text}</span></div>
+            ${action}
             <div class="cn-health-stats"><span>${r.clients_written} escribieron</span><span>${r.ai_replies} IA</span><span>${r.human_replies} personas</span><span>${r.last_ai_reply_at ? `última respuesta IA ${agTimeAgo(r.last_ai_reply_at)}` : 'la IA nunca ha respondido'}</span></div>
             ${waiting ? `<ul class="cn-health-wait">${waiting}</ul>` : ''}
           </div>`;
@@ -3539,6 +3559,27 @@ async function runBotHealth() {
     cnHealthBtn.textContent = 'Revisar ahora';
   }
 }
+
+cnHealthResult.addEventListener('click', async (ev) => {
+  const fix = ev.target.closest('[data-health-fix]');
+  const rec = ev.target.closest('[data-health-reconnect]');
+  if (fix) {
+    fix.disabled = true;
+    fix.textContent = 'Reparando…';
+    try {
+      await callEvolutionConnect({ action: 'fix_webhook', vendor_id: fix.dataset.healthFix });
+      await runBotHealth();
+    } catch (err) {
+      fix.disabled = false;
+      fix.textContent = 'Reparar conexión';
+      notify(`No se pudo reparar: ${err.message}`);
+    }
+  } else if (rec) {
+    cnState.selectedId = rec.dataset.healthReconnect;
+    renderVendorCards();
+    reconnectVendorQr(rec.dataset.healthReconnect);
+  }
+});
 cnHealthBtn.addEventListener('click', runBotHealth);
 
 function renderCanalDetail() {

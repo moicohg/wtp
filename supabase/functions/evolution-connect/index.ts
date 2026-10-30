@@ -168,7 +168,45 @@ Deno.serve(async (req: Request) => {
       return json({ success: true });
     }
 
-    throw new HttpError(400, 'action inválida. Usa: create, status o delete');
+    // ── check ─────────────────────────────────────────────────────────────────
+    // Estado REAL de Evolution (no la marca guardada) y si el webhook sigue apuntando a whatsapp-handler.
+    // Un canal puede figurar "conectado" y aun así no entregar mensajes al CRM.
+    if (body.action === 'check') {
+      const vendor = await loadVendor(body.vendor_id, caller.organizationId);
+      const instance = encodeURIComponent(vendor.evolution_instance_id);
+
+      const state = await evolution('GET', `/instance/connectionState/${instance}`);
+      const hook = await evolution('GET', `/webhook/find/${instance}`);
+      const cfg = hook.data?.webhook ?? hook.data;
+      const events: string[] = Array.isArray(cfg?.events) ? cfg.events : [];
+      const webhookOk =
+        hook.status >= 300
+          ? null
+          : Boolean(cfg?.enabled !== false && String(cfg?.url ?? '').includes('/functions/v1/whatsapp-handler') && events.includes('MESSAGES_UPSERT'));
+      return json({
+        evolution_state: state.status >= 300 ? null : (state.data?.instance?.state ?? null),
+        webhook_ok: webhookOk,
+      });
+    }
+
+    // ── fix_webhook ───────────────────────────────────────────────────────────
+    if (body.action === 'fix_webhook') {
+      const vendor = await loadVendor(body.vendor_id, caller.organizationId);
+      const res = await evolution('POST', `/webhook/set/${encodeURIComponent(vendor.evolution_instance_id)}`, {
+        webhook: {
+          enabled: true,
+          url: `${SUPABASE_URL}/functions/v1/whatsapp-handler`,
+          byEvents: false,
+          base64: false,
+          headers: { Authorization: `Bearer ${SUPABASE_ANON_KEY}`, apikey: SUPABASE_ANON_KEY },
+          events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+        },
+      });
+      if (res.status >= 300) throw new HttpError(502, `Evolution API respondió ${res.status} al registrar el webhook`);
+      return json({ success: true });
+    }
+
+    throw new HttpError(400, 'action inválida. Usa: create, status, check, fix_webhook o delete');
   } catch (err) {
     return handleError(err);
   }

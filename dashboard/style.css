@@ -3372,16 +3372,24 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 .key-set[hidden], #f-key-label[hidden] { display: none; }
 .key-set-text b { color: #15803d; margin-left: 4px; }
 
-.cn-health { margin-bottom: 16px; }
-.cn-health-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.cn-health-bar small { color: var(--muted, #64748b); margin-left: 6px; }
-.cn-health-actions { display: flex; gap: 8px; align-items: center; }
-#cn-health-result { margin-top: 12px; display: grid; gap: 8px; }
+.cn-health { margin-bottom: 16px; padding: 16px 20px; }
+.cn-health-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; }
+.cn-health-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 260px; }
+.cn-health-title small { color: var(--muted, #64748b); font-size: 13px; line-height: 1.35; }
+.cn-health-actions { display: flex; gap: 10px; align-items: center; flex: 0 0 auto; }
+.cn-health-actions select { height: 40px; padding: 0 38px 0 14px; font: inherit; font-size: 14px; border: 1px solid var(--border, #e2e8f0); border-radius: var(--radius-sm); background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%2364748b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 14px center; -webkit-appearance: none; appearance: none; cursor: pointer; }
+.cn-health-actions .btn { height: 40px; padding: 0 16px; white-space: nowrap; }
+#cn-health-result { margin-top: 14px; display: grid; gap: 10px; }
 #cn-health-result[hidden] { display: none; }
-.cn-health-row { padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border, #e2e8f0); }
+.cn-health-row { padding: 12px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border, #e2e8f0); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; overflow-wrap: anywhere; }
 .cn-health-row.is-ok { background: #f0fdf4; border-color: #bbf7d0; }
 .cn-health-row.is-bad { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-dark); }
 .cn-health-row.is-idle { background: #f8fafc; }
-.cn-health-main { display: flex; flex-direction: column; gap: 2px; }
-.cn-health-stats { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; font-size: 12.5px; color: var(--muted, #64748b); }
-.cn-health-wait { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
+.cn-health-main { display: flex; flex-direction: column; gap: 3px; line-height: 1.4; }
+.cn-health-stats { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted, #64748b); }
+.cn-health-wait { margin: 0; padding-left: 18px; font-size: 13px; }
+@media (max-width: 640px) {
+  .cn-health { padding: 14px; }
+  .cn-health-actions { width: 100%; }
+  .cn-health-actions select { flex: 1 1 auto; min-width: 0; }
+}
