@@ -7739,7 +7739,7 @@ const MX_DEFAULT_TARGETS = {
 };
 const MX_STATUS_LABEL = { ok: 'En meta', warn: 'Cerca', bad: 'Bajo', na: 'Pocos datos' };
 
-const mxState = { period: 'day', anchor: null, agent: '', origen: '', rows: [], targets: { ...MX_DEFAULT_TARGETS }, spend: {}, adjustments: [], token: 0 };
+const mxState = { period: 'day', anchor: null, customFrom: '', customTo: '', allFrom: '', agent: '', origen: '', rows: [], targets: { ...MX_DEFAULT_TARGETS }, spend: {}, adjustments: [], token: 0 };
 
 integGhlCopy.addEventListener('click', async () => {
   try {
@@ -7771,6 +7771,19 @@ function mxRange() {
     const from = `${a.slice(0, 7)}-01`;
     return { from, to: `${a.slice(0, 7)}-${String(mxDaysInMonth(a)).padStart(2, '0')}` };
   }
+  if (mxState.period === 'quarter') {
+    const y = a.slice(0, 4);
+    const q = Math.floor((Number(a.slice(5, 7)) - 1) / 3);
+    const lastMonth = String(q * 3 + 3).padStart(2, '0');
+    return { from: `${y}-${String(q * 3 + 1).padStart(2, '0')}-01`, to: `${y}-${lastMonth}-${String(mxDaysInMonth(`${y}-${lastMonth}-01`)).padStart(2, '0')}` };
+  }
+  if (mxState.period === 'year') return { from: `${a.slice(0, 4)}-01-01`, to: `${a.slice(0, 4)}-12-31` };
+  if (mxState.period === 'all') return { from: mxState.allFrom || limaToday(), to: limaToday() };
+  if (mxState.period === 'custom') {
+    const from = mxState.customFrom || addDays(limaToday(), -29);
+    const to = mxState.customTo || limaToday();
+    return from <= to ? { from, to } : { from: to, to: from };
+  }
   return { from: a, to: a };
 }
 
@@ -7784,6 +7797,10 @@ function mxRangeLabel() {
   const r = mxRange();
   if (mxState.period === 'day') return mxDate(r.from, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   if (mxState.period === 'week') return `Semana del ${mxDate(r.from, { day: 'numeric', month: 'short' })} al ${mxDate(r.to, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+  if (mxState.period === 'quarter') return `Trimestre ${Math.floor((Number(r.from.slice(5, 7)) - 1) / 3) + 1} de ${r.from.slice(0, 4)} · ${mxDate(r.from, { month: 'short' })} – ${mxDate(r.to, { month: 'short' })}`;
+  if (mxState.period === 'year') return `Año ${r.from.slice(0, 4)}`;
+  if (mxState.period === 'all') return `Todo el historial · desde ${mxDate(r.from, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+  if (mxState.period === 'custom') return `Del ${mxDate(r.from, { day: 'numeric', month: 'short', year: 'numeric' })} al ${mxDate(r.to, { day: 'numeric', month: 'short', year: 'numeric' })}`;
   return mxDate(r.from, { month: 'long', year: 'numeric' });
 }
 
@@ -7844,10 +7861,25 @@ async function loadMetricas() {
     '<option value="none">Sin clasificar</option>';
   mxOrigenSel.value = mxState.origen;
 
+  const queryFrom = mxState.period === 'all' ? '2020-01-01' : grid.from;
+  // La API devuelve como máximo 1000 filas por consulta: en rangos largos se pagina.
+  const fetchMetricRows = async () => {
+    const rows = [];
+    for (let page = 0; page < 50; page++) {
+      const { data, error } = await supabase
+        .rpc('metrics_daily', { p_org: orgId, p_from: queryFrom, p_to: range.to })
+        .order('day').order('agent_id', { nullsFirst: true }).order('origen', { nullsFirst: true })
+        .range(page * 1000, page * 1000 + 999);
+      if (error) return { data: null, error };
+      rows.push(...data);
+      if (data.length < 1000) break;
+    }
+    return { data: rows, error: null };
+  };
   const [rowsRes, targetsRes, spendRes, adjRes] = await Promise.all([
-    supabase.rpc('metrics_daily', { p_org: orgId, p_from: grid.from, p_to: range.to }),
+    fetchMetricRows(),
     supabase.from('metric_targets').select('*').maybeSingle(),
-    supabase.from('metric_spend').select('month, amount').gte('month', `${grid.from.slice(0, 7)}-01`).lte('month', range.to),
+    supabase.from('metric_spend').select('month, amount').gte('month', `${queryFrom.slice(0, 7)}-01`).lte('month', range.to),
     manage
       ? supabase.from('metric_adjustments').select('*').order('day', { ascending: false }).order('created_at', { ascending: false }).limit(15)
       : Promise.resolve({ data: [] }),
@@ -7859,6 +7891,8 @@ async function loadMetricas() {
     return;
   }
   mxState.rows = rowsRes.data ?? [];
+  // "Todo": desde el primer día con datos.
+  mxState.allFrom = mxState.rows.reduce((min, r) => (r.day < min ? r.day : min), limaToday());
   mxState.targets = { ...MX_DEFAULT_TARGETS, ...(targetsRes.data ?? {}) };
   mxState.spend = Object.fromEntries((spendRes.data ?? []).map((s) => [s.month, Number(s.amount)]));
   mxState.adjustments = adjRes.data ?? [];
@@ -7879,6 +7913,12 @@ function renderMetricas() {
   const range = mxRange();
   document.getElementById('mx-range-label').textContent = mxRangeLabel();
   document.querySelectorAll('#mx-period .chip').forEach((c) => c.classList.toggle('is-active', c.dataset.mxPeriod === mxState.period));
+  document.getElementById('mx-custom').hidden = mxState.period !== 'custom';
+  document.getElementById('mx-daynav').hidden = mxState.period === 'all' || mxState.period === 'custom';
+  if (mxState.period === 'custom') {
+    document.getElementById('mx-from').value = range.from;
+    document.getElementById('mx-to').value = range.to;
+  }
 
   const totals = mxSum(mxState.rows, range.from, range.to, mxMatchesAgent);
   const teamScope = !mxState.agent && !mxState.origen && state.me.isAdmin;
@@ -7997,17 +8037,29 @@ function renderMxOrigins(range) {
 function renderMxDays() {
   const g = mxGridRange();
   const range = mxRange();
-  let body = '';
-  for (let d = g.from; d <= g.to; d = addDays(d, 1)) {
-    const t = mxSum(mxState.rows, d, d, mxMatchesAgent);
+  const long = mxState.period !== 'day' && (Date.parse(g.to) - Date.parse(g.from)) / 86400000 > 62;
+  const rowHtml = (label, t, cur) => {
     const ev = mxEvaluate(MX_STAGES[1], t);
-    const cur = d >= range.from && d <= range.to ? ' mx-day-current' : '';
-    body += `<tr class="${cur}"><td>${mxDate(d, { weekday: 'short', day: 'numeric', month: 'short' })}</td>${MX_STAGES.map((s) => `<td class="mx-num">${t[s.key]}</td>`).join('')}<td class="mx-pct mx-${ev.status}">${mxPct(ev.pct)}</td></tr>`;
+    return `<tr class="${cur}"><td>${label}</td>${MX_STAGES.map((s) => `<td class="mx-num">${t[s.key]}</td>`).join('')}<td class="mx-pct mx-${ev.status}">${mxPct(ev.pct)}</td></tr>`;
+  };
+  let body = '';
+  if (long) {
+    // Rangos largos: una fila por mes.
+    let m = `${g.from.slice(0, 7)}-01`;
+    while (m <= g.to) {
+      const end = `${m.slice(0, 7)}-${String(mxDaysInMonth(m)).padStart(2, '0')}`;
+      body += rowHtml(mxDate(m, { month: 'long', year: 'numeric' }), mxSum(mxState.rows, m < g.from ? g.from : m, end > g.to ? g.to : end, mxMatchesAgent), '');
+      m = new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 1, 12)).toISOString().slice(0, 10);
+    }
+  } else {
+    for (let d = g.from; d <= g.to; d = addDays(d, 1)) {
+      body += rowHtml(mxDate(d, { weekday: 'short', day: 'numeric', month: 'short' }), mxSum(mxState.rows, d, d, mxMatchesAgent), d >= range.from && d <= range.to ? ' mx-day-current' : '');
+    }
   }
   document.getElementById('mx-days').innerHTML = `
-    <div class="mx-card-title">Registro diario</div>
+    <div class="mx-card-title">${long ? 'Registro mensual' : 'Registro diario'}</div>
     <div class="mx-table-wrap"><table class="mx-table mx-table-sm">
-      <thead><tr><th>Día</th><th>Leads</th><th>Resp.</th><th>Agendó</th><th>Asistió</th><th>Separó</th><th>Ventas</th><th>% resp.</th></tr></thead>
+      <thead><tr><th>${long ? 'Mes' : 'Día'}</th><th>Leads</th><th>Resp.</th><th>Agendó</th><th>Asistió</th><th>Separó</th><th>Ventas</th><th>% resp.</th></tr></thead>
       <tbody>${body}</tbody>
     </table></div>`;
 }
@@ -8127,7 +8179,8 @@ function mxShift(dir) {
   else if (mxState.period === 'week') mxState.anchor = addDays(mxState.anchor, 7 * dir);
   else {
     const [y, m] = mxState.anchor.split('-').map(Number);
-    mxState.anchor = new Date(Date.UTC(y, m - 1 + dir, 1, 12)).toISOString().slice(0, 10);
+    const step = mxState.period === 'quarter' ? 3 : mxState.period === 'year' ? 12 : 1;
+    mxState.anchor = new Date(Date.UTC(y, m - 1 + dir * step, 1, 12)).toISOString().slice(0, 10);
   }
   loadMetricas();
 }
@@ -8138,6 +8191,17 @@ document.getElementById('mx-period').addEventListener('click', (ev) => {
   mxState.period = b.dataset.mxPeriod;
   loadMetricas();
 });
+for (const id of ['mx-from', 'mx-to']) {
+  document.getElementById(id).addEventListener('change', (ev) => {
+    if (!ev.target.value) return;
+    if (id === 'mx-from') mxState.customFrom = ev.target.value;
+    else mxState.customTo = ev.target.value;
+    // Si solo se tocó una punta, la otra toma el valor mostrado.
+    mxState.customFrom = mxState.customFrom || document.getElementById('mx-from').value;
+    mxState.customTo = mxState.customTo || document.getElementById('mx-to').value;
+    loadMetricas();
+  });
+}
 document.getElementById('mx-prev').addEventListener('click', () => mxShift(-1));
 document.getElementById('mx-next').addEventListener('click', () => mxShift(1));
 document.getElementById('mx-today').addEventListener('click', () => {

@@ -3393,3 +3393,8 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
   .cn-health-actions { width: 100%; }
   .cn-health-actions select { flex: 1 1 auto; min-width: 0; }
 }
+
+.mx-custom { display: flex; align-items: center; gap: 6px; }
+.mx-custom[hidden], #mx-daynav[hidden] { display: none; }
+.mx-custom input { padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); font: inherit; color: var(--text); }
+.mx-period { flex-wrap: wrap; }

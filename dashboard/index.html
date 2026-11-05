@@ -306,8 +306,17 @@
               <button class="chip is-active" data-mx-period="day" type="button">Diario</button>
               <button class="chip" data-mx-period="week" type="button">Semanal</button>
               <button class="chip" data-mx-period="month" type="button">Mensual</button>
+              <button class="chip" data-mx-period="quarter" type="button">Trimestral</button>
+              <button class="chip" data-mx-period="year" type="button">Anual</button>
+              <button class="chip" data-mx-period="all" type="button">Todo</button>
+              <button class="chip" data-mx-period="custom" type="button">Fechas</button>
             </div>
-            <div class="ag-daynav">
+            <div class="mx-custom" id="mx-custom" hidden>
+              <input type="date" id="mx-from" aria-label="Desde" />
+              <span>a</span>
+              <input type="date" id="mx-to" aria-label="Hasta" />
+            </div>
+            <div class="ag-daynav" id="mx-daynav">
               <button type="button" id="mx-prev" aria-label="Periodo anterior">‹</button>
               <button type="button" id="mx-today">Hoy</button>
               <button type="button" id="mx-next" aria-label="Periodo siguiente">›</button>
