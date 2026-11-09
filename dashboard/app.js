@@ -6852,16 +6852,31 @@ loginForm.addEventListener('submit', async (ev) => {
 
 // Carga el perfil de la sesión y arranca la app (o muestra por qué no puede).
 async function bootstrapSession(session) {
-  const { data: profile, error } = await supabase
+  const loadProfile = () => supabase
     .from('profiles')
     .select('*, organization:organizations(id, name, is_active, max_channels, max_agents, plan_expires_at, enabled_sections), agent:agents(*, role:roles(id, name, permissions))')
     .eq('id', session.user.id)
     .maybeSingle();
 
+  let { data: profile, error } = await loadProfile();
+  // "JWT issued at future": el reloj de un nodo de Supabase va unos segundos atrás del que emitió el token.
+  // Se corrige solo en segundos, así que se reintenta antes de mostrar el error.
+  for (let i = 0; error && /issued at future|fetch|network/i.test(error.message) && i < 3; i++) {
+    await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+    ({ data: profile, error } = await loadProfile());
+  }
+
   if (error) {
     showBlocked('No se pudo cargar tu perfil', error.message);
+    const retry = document.getElementById('blocked-retry-btn');
+    retry.hidden = false;
+    retry.onclick = () => {
+      retry.hidden = true;
+      bootstrapSession(session);
+    };
     return;
   }
+  document.getElementById('blocked-retry-btn').hidden = true;
   if (!profile) {
     showBlocked('Sin acceso', 'Tu usuario existe pero no está vinculado a ninguna empresa. Contacta al administrador de la plataforma.');
     return;
