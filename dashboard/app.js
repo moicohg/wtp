@@ -6863,6 +6863,8 @@ async function bootstrapSession(session) {
   // Se corrige solo en segundos, así que se reintenta antes de mostrar el error.
   for (let i = 0; error && /issued at future|fetch|network/i.test(error.message) && i < 3; i++) {
     await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+    // Un token nuevo trae otra hora de emisión: si el guardado quedó "en el futuro", se reemplaza.
+    if (/issued at future/i.test(error.message)) await supabase.auth.refreshSession().catch(() => {});
     ({ data: profile, error } = await loadProfile());
   }
 
